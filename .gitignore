@@ -30,3 +30,9 @@ data/vector_store/
 vector_store/
 data/build_vectorstore.log
 data/ingestion.log
+
+# 忽略测试报告和数据文件
+*.md
+*.json
+*.jsonl
+test_chat.py
