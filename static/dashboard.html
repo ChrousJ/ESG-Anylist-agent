@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESG Agent | 可观测面板</title>
+    <link href="style.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
+    <style>
+        .dashboard-container { padding: 2rem; max-width: 1200px; margin: 0 auto; color: var(--text-primary); }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .stat-card { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; text-align: center; }
+        .stat-value { font-size: 2rem; font-weight: 600; color: var(--accent-color); font-family: monospace; }
+        .table-container { background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--border-color); }
+        th { background: rgba(255, 255, 255, 0.05); color: var(--text-secondary); font-weight: 500; }
+        tr:last-child td { border-bottom: none; }
+        .error-msg { color: var(--node-failed); background: rgba(218, 54, 51, 0.1); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; display: none;}
+        #node-chart { width: 100%; height: 400px; margin-top: 2rem; background: var(--panel-bg); border-radius: 12px; padding: 1rem; border: 1px solid var(--border-color);}
+    </style>
+</head>
+<body class="dark-theme">
+    <div class="dashboard-container">
+        <header style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: center;">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="icon-sparkle">
+                    <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z" fill="currentColor"/>
+                </svg>
+                <h1>LangGraph Node Observability</h1>
+            </div>
+            <a href="index.html" class="nav-link">返回聊天终端</a>
+        </header>
+
+        <div id="error-box" class="error-msg"></div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-title">总调用次数 (Approx)</div>
+                <div class="stat-value" id="val-total">--</div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Node Name</th>
+                        <th>Calls Count</th>
+                        <th>Avg Latency (ms)</th>
+                        <th>P50 Latency (ms)</th>
+                        <th>P95 Latency (ms)</th>
+                    </tr>
+                </thead>
+                <tbody id="stats-tbody">
+                    <tr><td colspan="5" style="text-align: center;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="node-chart"></div>
+    </div>
+
+    <script>
+        async function fetchStats() {
+            try {
+                const res = await fetch('/api/traces/stats');
+                const data = await res.json();
+                
+                if (data.error) {
+                    document.getElementById('error-box').textContent = "Error: " + data.error;
+                    document.getElementById('error-box').style.display = 'block';
+                    return;
+                }
+
+                document.getElementById('val-total').textContent = data.total_traces_approx;
+
+                const tbody = document.getElementById('stats-tbody');
+                tbody.innerHTML = '';
+                
+                const stats = data.node_stats;
+                
+                // Pipeline sort order if available
+                const order = ['context', 'supervisor', 'schema_injector', 'sql_worker', 'rag_worker', 'worker_aggregator', 'evaluator_d', 'map_reduce', 'synthesizer', 'evaluator_o', 'memory_updater'];
+                
+                const nodes = Object.keys(stats).sort((a, b) => {
+                    let ia = order.indexOf(a);
+                    let ib = order.indexOf(b);
+                    if (ia === -1) ia = 99; if (ib === -1) ib = 99;
+                    return ia - ib;
+                });
+
+                const x_axis = [];
+                const d_avg = [];
+                const d_p95 = [];
+
+                if (nodes.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No trace data found in logs.</td></tr>';
+                    return;
+                }
+
+                for (const node of nodes) {
+                    const row = document.createElement('tr');
+                    const info = stats[node];
+                    row.innerHTML = `
+                        <td><strong>${node}</strong></td>
+                        <td>${info.count}</td>
+                        <td style="color:var(--accent-color)">${info.avg_ms}</td>
+                        <td>${info.p50_ms}</td>
+                        <td style="color:#d29922">${info.p95_ms}</td>
+                    `;
+                    tbody.appendChild(row);
+
+                    x_axis.push(node);
+                    d_avg.push(info.avg_ms);
+                    d_p95.push(info.p95_ms);
+                }
+
+                // Render Chart
+                const traceAvg = { x: x_axis, y: d_avg, name: 'Average', type: 'bar', marker: {color: '#388bfd'} };
+                const traceP95 = { x: x_axis, y: d_p95, name: 'P95', type: 'bar', marker: {color: '#d29922'} };
+                const layout = {
+                    title: 'Node Latency Breakdown (ms)',
+                    paper_bgcolor: 'transparent',
+                    plot_bgcolor: 'transparent',
+                    font: { color: '#e6edf3' },
+                    barmode: 'group',
+                    xaxis: { gridcolor: '#30363d' },
+                    yaxis: { gridcolor: '#30363d' },
+                    margin: { l: 60, r: 20, t: 40, b: 80 }
+                };
+                Plotly.newPlot('node-chart', [traceAvg, traceP95], layout);
+
+            } catch (err) {
+                document.getElementById('error-box').textContent = "Fetch failed: " + err.message;
+                document.getElementById('error-box').style.display = 'block';
+            }
+        }
+
+        // Wait for plotly
+        setTimeout(fetchStats, 500);
+    </script>
+</body>
+</html>

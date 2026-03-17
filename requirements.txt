@@ -1,0 +1,35 @@
+# ── Core Web Framework ──
+fastapi
+uvicorn
+pydantic
+python-dotenv
+
+# ── LangGraph / LangChain ──
+langgraph
+langsmith
+
+# ── LLM Providers ──
+google-genai
+openai
+
+# ── Vector Store & Embeddings ──
+chromadb
+FlagEmbedding
+transformers
+
+# ── BM25 & NLP ──
+rank-bm25
+jieba
+
+# ── Data Processing ──
+pandas
+pdfplumber
+rapidfuzz
+
+# ── HTTP & Storage ──
+httpx
+requests
+redis
+
+# ── Typing ──
+typing_extensions

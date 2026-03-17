@@ -1,0 +1,32 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Database (generated)
+*.db
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Data artifacts (large files, regeneratable)
+data/bm25_index.pkl
+data/chunk_metadata.json
+data/vector_store/
+vector_store/
+data/build_vectorstore.log
+data/ingestion.log
