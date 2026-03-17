@@ -323,8 +323,26 @@ def llm_call_with_retry(
     log = TraceLogger(caller_name, trace_id)
     kwargs = kwargs or {}
     last_error: dict | None = None
+    # Global soft rate limit for Gemini/Qwen calls (prevents 429 storms)
+    global_min_interval = float(os.getenv("LLM_MIN_INTERVAL_SEC", "2.0"))
+    jitter = float(os.getenv("LLM_JITTER_SEC", "0.5"))
+    max_backoff = float(os.getenv("LLM_MAX_BACKOFF_SEC", "20.0"))
+    max_retries = int(os.getenv("LLM_MAX_RETRIES", str(max_retries)))
+    base_delay = float(os.getenv("LLM_BASE_DELAY_SEC", str(base_delay)))
+
+    # Simple process-level rate limiter
+    if not hasattr(llm_call_with_retry, "_last_call_ts"):
+        llm_call_with_retry._last_call_ts = 0.0  # type: ignore[attr-defined]
 
     for attempt in range(max_retries + 1):
+        now = time.time()
+        last_ts = getattr(llm_call_with_retry, "_last_call_ts")  # type: ignore[attr-defined]
+        elapsed = now - last_ts
+        if elapsed < global_min_interval:
+            sleep_for = (global_min_interval - elapsed) + (jitter * 0.5)
+            time.sleep(max(0.0, sleep_for))
+        setattr(llm_call_with_retry, "_last_call_ts", time.time())  # type: ignore[attr-defined]
+
         result = run_with_timeout(
             fn,
             args=args,
@@ -337,9 +355,16 @@ def llm_call_with_retry(
             return result["result"]
 
         last_error = result
-        log.warning(f"llm_call failed status={result['status']} attempt={attempt+1}")
+        err_detail = (result.get("error_detail") or "")[:200]
+        log.warning(f"llm_call failed status={result['status']} attempt={attempt+1} err={err_detail}")
         if attempt < max_retries:
-            time.sleep(base_delay * (2 ** attempt))
+            # Exponential backoff with cap; add jitter for bursty 429
+            sleep_for = min(max_backoff, base_delay * (2 ** attempt)) + jitter
+            # If we detect rate-limit hints, wait a bit longer
+            err_lower = (result.get("error_detail") or "").lower()
+            if "429" in err_lower or "rate" in err_lower or "quota" in err_lower:
+                sleep_for = max(sleep_for, max_backoff)
+            time.sleep(sleep_for)
 
     raise RuntimeError(
         f"LLM call failed after {max_retries+1} attempts: {last_error}"

@@ -25,12 +25,13 @@ import json
 import logging
 import math
 import os
+import re
 import statistics
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, TypedDict
 
 # ── 项目路径配置 ──────────────────────────────────────────────────────────────
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -50,6 +51,169 @@ logging.basicConfig(
 )
 log = logging.getLogger("eval_runner")
 
+
+# ----------------------------
+# Judge (LLM-as-a-Judge)
+# ----------------------------
+class JudgeConfig(TypedDict):
+    enabled: bool
+    model: str
+    base_url: str
+    api_key: str
+    max_answer_chars: int
+    max_evidence_chars: int
+
+
+def _truncate(text: str, max_chars: int) -> str:
+    if not text:
+        return ""
+    return text if len(text) <= max_chars else text[:max_chars] + "..."
+
+
+def _summarize_sql_result(sql_result: Any, max_rows: int = 5) -> dict[str, Any]:
+    if not sql_result:
+        return {}
+    # Most common serialized form: list[dict]
+    if isinstance(sql_result, list):
+        rows = [r for r in sql_result if isinstance(r, dict)]
+        preview = rows[:max_rows]
+        cols = list(preview[0].keys()) if preview else []
+        return {
+            "row_count": len(rows),
+            "columns": cols,
+            "rows_preview": preview,
+        }
+    # Fallback if dict-like
+    if isinstance(sql_result, dict):
+        return {
+            "row_count": sql_result.get("row_count", ""),
+            "columns": sql_result.get("columns", []),
+            "rows_preview": sql_result.get("rows_preview", []),
+        }
+    return {}
+
+
+def _summarize_sources(sources: list[dict], max_items: int = 5) -> list[dict]:
+    if not sources:
+        return []
+    preview = []
+    for s in sources[:max_items]:
+        preview.append({
+            "type": s.get("type", ""),
+            "company": s.get("company", ""),
+            "year": s.get("year", ""),
+            "page": s.get("page", ""),
+            "score": s.get("score", 0),
+        })
+    return preview
+
+
+def _extract_json(text: str) -> Optional[dict[str, Any]]:
+    if not text:
+        return None
+    text = text.strip()
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            return json.loads(text)
+        except Exception:
+            pass
+    # Try to find a JSON object in the text
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except Exception:
+            return None
+    return None
+
+
+def _judge_answer(
+    query: str,
+    answer: str,
+    evidence: dict[str, Any],
+    judge_cfg: JudgeConfig,
+) -> dict[str, Any]:
+    if not judge_cfg["enabled"]:
+        return {
+            "judge_overall": None,
+            "judge_faithfulness": None,
+            "judge_notes": "",
+            "judge_error": "judge_disabled",
+        }
+    if not judge_cfg["api_key"]:
+        return {
+            "judge_overall": None,
+            "judge_faithfulness": None,
+            "judge_notes": "",
+            "judge_error": "missing_judge_api_key",
+        }
+    try:
+        import openai
+    except Exception as e:
+        return {
+            "judge_overall": None,
+            "judge_faithfulness": None,
+            "judge_notes": "",
+            "judge_error": f"openai_import_failed: {str(e)[:80]}",
+        }
+
+    client = openai.OpenAI(
+        api_key=judge_cfg["api_key"],
+        base_url=judge_cfg["base_url"],
+    )
+
+    ans_text = _truncate(answer, judge_cfg["max_answer_chars"])
+    evidence_text = json.dumps(evidence, ensure_ascii=False)
+    evidence_text = _truncate(evidence_text, judge_cfg["max_evidence_chars"])
+
+    system = (
+        "You are a strict evaluator for ESG Q&A. "
+        "Score answers for overall quality and faithfulness to provided evidence. "
+        "Return ONLY valid JSON."
+    )
+    user = (
+        "Evaluate the answer to the query. Use the evidence if provided. "
+        "If evidence is empty, set faithfulness_score to null.\n\n"
+        f"Query:\n{query}\n\n"
+        f"Answer:\n{ans_text}\n\n"
+        f"Evidence (JSON):\n{evidence_text}\n\n"
+        "Return JSON with fields:\n"
+        "{"
+        "\"overall_score\": 1-5 integer, "
+        "\"faithfulness_score\": 1-5 integer or null, "
+        "\"notes\": short string, "
+        "\"flags\": list of strings"
+        "}"
+    )
+
+    try:
+        resp = client.chat.completions.create(
+            model=judge_cfg["model"],
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.0,
+            max_tokens=256,
+        )
+        content = resp.choices[0].message.content or ""
+        data = _extract_json(content) or {}
+        overall = data.get("overall_score", None)
+        faithful = data.get("faithfulness_score", None)
+        notes = data.get("notes", "")
+        return {
+            "judge_overall": overall,
+            "judge_faithfulness": faithful,
+            "judge_notes": notes,
+            "judge_error": "",
+        }
+    except Exception as e:
+        return {
+            "judge_overall": None,
+            "judge_faithfulness": None,
+            "judge_notes": "",
+            "judge_error": str(e)[:200],
+        }
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LangGraph Agent Runner
@@ -87,6 +251,14 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
         is_degraded = final_state.get("is_degraded", False)
         query_class = final_state.get("query_class", "")
         key_findings = final_state.get("key_findings", [])
+        sql_result_preview = _summarize_sql_result(final_state.get("sql_result"))
+        sources_preview = _summarize_sources(final_state.get("sources", []))
+
+        # Tool error rate (SQL/RAG workers)
+        tool_nodes = [nt for nt in node_trace if nt.get("node_name") in ("sql_worker", "rag_worker")]
+        tool_failed = sum(1 for nt in tool_nodes if nt.get("status") == "failed")
+        tool_total = len(tool_nodes)
+        tool_error_rate = round(tool_failed / tool_total, 4) if tool_total else 0.0
 
         # Determine status
         if analysis and eval_o_status in ("pass", "degraded"):
@@ -116,6 +288,7 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
             "status": status,
             "latency_ms": latency_ms,
             "analysis_length": len(analysis),
+            "analysis_full": analysis,
             "analysis_preview": analysis[:200],
             "query_class": query_class,
             "eval_o_status": eval_o_status,
@@ -124,6 +297,7 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
             "replan_count": max(0, replan_count - 1),  # First call is not a re-plan
             "eval_o_retry": eval_o_retry,
             "node_count": len(node_trace),
+            "step_count": len(node_trace),
             "node_trace_summary": [
                 {"node": nt.get("node_name", ""), "ms": nt.get("duration_ms", 0), "status": nt.get("status", "")}
                 for nt in node_trace
@@ -131,6 +305,15 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
             "trace_id": trace_id,
             "error": "",
             "key_findings": key_findings,
+            "sql_result_preview": sql_result_preview,
+            "sources_preview": sources_preview,
+            "tool_failed_count": tool_failed,
+            "tool_total_count": tool_total,
+            "tool_error_rate": tool_error_rate,
+            "judge_overall": None,
+            "judge_faithfulness": None,
+            "judge_notes": "",
+            "judge_error": "",
         }
     except Exception as e:
         latency_ms = int((time.perf_counter() - t_start) * 1000)
@@ -141,6 +324,7 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
             "status": "crashed",
             "latency_ms": latency_ms,
             "analysis_length": 0,
+            "analysis_full": "",
             "analysis_preview": "",
             "query_class": "",
             "eval_o_status": "",
@@ -149,10 +333,20 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
             "replan_count": 0,
             "eval_o_retry": 0,
             "node_count": 0,
+            "step_count": 0,
             "node_trace_summary": [],
             "trace_id": trace_id,
             "error": str(e)[:500],
             "key_findings": [],
+            "sql_result_preview": {},
+            "sources_preview": [],
+            "tool_failed_count": 0,
+            "tool_total_count": 0,
+            "tool_error_rate": 0.0,
+            "judge_overall": None,
+            "judge_faithfulness": None,
+            "judge_notes": "",
+            "judge_error": str(e)[:200],
         }
 
 
@@ -176,6 +370,7 @@ def _run_baseline_agent(query: str, case_id: str) -> dict[str, Any]:
             "status": result.get("status", "unknown"),
             "latency_ms": latency_ms,
             "analysis_length": len(analysis),
+            "analysis_full": analysis,
             "analysis_preview": analysis[:200],
             "query_class": "",
             "eval_o_status": "",
@@ -184,10 +379,20 @@ def _run_baseline_agent(query: str, case_id: str) -> dict[str, Any]:
             "replan_count": 0,
             "eval_o_retry": 0,
             "node_count": result.get("message_count", 0),
+            "step_count": result.get("message_count", 0),
             "node_trace_summary": [],
             "trace_id": "",
             "error": result.get("error", ""),
             "key_findings": [],
+            "sql_result_preview": {},
+            "sources_preview": [],
+            "tool_failed_count": 0,
+            "tool_total_count": 0,
+            "tool_error_rate": 0.0,
+            "judge_overall": None,
+            "judge_faithfulness": None,
+            "judge_notes": "",
+            "judge_error": "",
         }
     except Exception as e:
         latency_ms = int((time.perf_counter() - t_start) * 1000)
@@ -198,6 +403,7 @@ def _run_baseline_agent(query: str, case_id: str) -> dict[str, Any]:
             "status": "crashed",
             "latency_ms": latency_ms,
             "analysis_length": 0,
+            "analysis_full": "",
             "analysis_preview": "",
             "query_class": "",
             "eval_o_status": "",
@@ -206,10 +412,20 @@ def _run_baseline_agent(query: str, case_id: str) -> dict[str, Any]:
             "replan_count": 0,
             "eval_o_retry": 0,
             "node_count": 0,
+            "step_count": 0,
             "node_trace_summary": [],
             "trace_id": "",
             "error": str(e)[:500],
             "key_findings": [],
+            "sql_result_preview": {},
+            "sources_preview": [],
+            "tool_failed_count": 0,
+            "tool_total_count": 0,
+            "tool_error_rate": 0.0,
+            "judge_overall": None,
+            "judge_faithfulness": None,
+            "judge_notes": "",
+            "judge_error": str(e)[:200],
         }
 
 
@@ -226,6 +442,19 @@ def _compute_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
     completed = sum(1 for r in results if r["status"] in ("success", "degraded"))
     rescued = sum(1 for r in results if r.get("rescued", False))
     latencies = [r["latency_ms"] for r in results]
+    step_counts = [r.get("step_count", 0) for r in results if r.get("step_count", 0) > 0]
+    tool_error_rates = [
+        r.get("tool_error_rate", None) for r in results
+        if r.get("tool_total_count", 0) > 0
+    ]
+    judge_overall = [
+        r.get("judge_overall") for r in results
+        if isinstance(r.get("judge_overall"), (int, float))
+    ]
+    judge_faithful = [
+        r.get("judge_faithfulness") for r in results
+        if isinstance(r.get("judge_faithfulness"), (int, float))
+    ]
 
     latencies_sorted = sorted(latencies)
     p50_idx = max(0, int(math.ceil(0.50 * total)) - 1)
@@ -244,6 +473,10 @@ def _compute_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
         "p95_latency_ms": latencies_sorted[p95_idx] if latencies_sorted else 0,
         "max_latency_ms": max(latencies) if latencies else 0,
         "min_latency_ms": min(latencies) if latencies else 0,
+        "avg_steps": round(statistics.mean(step_counts), 2) if step_counts else 0,
+        "avg_tool_error_rate": round(statistics.mean(tool_error_rates), 4) if tool_error_rates else 0,
+        "avg_judge_overall": round(statistics.mean(judge_overall), 2) if judge_overall else 0,
+        "avg_judge_faithfulness": round(statistics.mean(judge_faithful), 2) if judge_faithful else 0,
     }
 
 
@@ -319,6 +552,30 @@ def _generate_report(
         f"{bl_metrics['avg_latency_ms']}ms" if bl_metrics['total'] else "N/A",
     )
     lines.append(f"| Avg Latency | {lg_s} | {bl_s} |")
+
+    lg_s, bl_s = _fmt(
+        f"{lg_metrics.get('avg_steps', 0)}",
+        f"{bl_metrics.get('avg_steps', 'N/A')}" if bl_metrics['total'] else "N/A",
+    )
+    lines.append(f"| Avg Steps | {lg_s} | {bl_s} |")
+
+    lg_s, bl_s = _fmt(
+        f"{lg_metrics.get('avg_tool_error_rate', 0)}",
+        "N/A",
+    )
+    lines.append(f"| Tool Error Rate | {lg_s} | {bl_s} |")
+
+    lg_j, bl_j = _fmt(
+        f"{lg_metrics.get('avg_judge_overall', 0)}",
+        f"{bl_metrics.get('avg_judge_overall', 'N/A')}" if bl_metrics['total'] else "N/A",
+    )
+    lines.append(f"| Judge Overall | {lg_j} | {bl_j} |")
+
+    lg_f, bl_f = _fmt(
+        f"{lg_metrics.get('avg_judge_faithfulness', 0)}",
+        "N/A",
+    )
+    lines.append(f"| Judge Faithfulness | {lg_f} | {bl_f} |")
 
     lines.append(f"| Crashed | {lg_metrics.get('crashed', 0)} | {bl_metrics.get('crashed', 0)} |")
     lines.append(f"| Degraded | {lg_metrics.get('degraded', 0)} | N/A |")
@@ -467,6 +724,7 @@ async def _run_all(
     concurrency: int = 1,
     run_baseline: bool = True,
     delay_between: float = 2.0,
+    judge_cfg: JudgeConfig | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Run all eval cases with rate limiting."""
     sem = asyncio.Semaphore(concurrency)
@@ -481,6 +739,16 @@ async def _run_all(
             result = await loop.run_in_executor(
                 None, _run_langgraph_agent, case["query"], case["id"]
             )
+            if judge_cfg and judge_cfg.get("enabled") and result.get("analysis_full"):
+                evidence = {
+                    "sql_result_preview": result.get("sql_result_preview", {}),
+                    "sources_preview": result.get("sources_preview", []),
+                }
+                judge_result = await loop.run_in_executor(
+                    None, _judge_answer, case["query"], result.get("analysis_full", ""), evidence, judge_cfg
+                )
+                result.update(judge_result)
+            result.pop("analysis_full", None)
             log.info(
                 f"[{idx}/{total}] LangGraph: {case['id']} -> {result['status']} "
                 f"({result['latency_ms']}ms)"
@@ -494,6 +762,13 @@ async def _run_all(
             result = await loop.run_in_executor(
                 None, _run_baseline_agent, case["query"], case["id"]
             )
+            if judge_cfg and judge_cfg.get("enabled") and result.get("analysis_full"):
+                evidence = {}
+                judge_result = await loop.run_in_executor(
+                    None, _judge_answer, case["query"], result.get("analysis_full", ""), evidence, judge_cfg
+                )
+                result.update(judge_result)
+            result.pop("analysis_full", None)
             log.info(
                 f"[{idx}/{total}] Baseline: {case['id']} -> {result['status']} "
                 f"({result['latency_ms']}ms)"
@@ -540,14 +815,53 @@ def main() -> None:
         help="Delay between runs in seconds (rate limit protection)",
     )
     parser.add_argument(
+        "--disable-rerank", action="store_true",
+        help="Disable BGE reranker (faster, more stable for long evals)",
+    )
+    parser.add_argument(
+        "--rag-timeout", type=float, default=0.0,
+        help="RAG timeout in seconds (0 = no timeout)",
+    )
+    parser.add_argument(
+        "--rag-scope-timeout", type=float, default=30.0,
+        help="RAG scope timeout in seconds (0 = no timeout)",
+    )
+    parser.add_argument(
+        "--llm-min-interval", type=float, default=0.0,
+        help="Global LLM min interval seconds (0 = keep env/default)",
+    )
+    parser.add_argument(
         "--skip-baseline", action="store_true",
         help="Skip baseline agent runs",
+    )
+    parser.add_argument(
+        "--skip-judge", action="store_true",
+        help="Skip LLM-as-a-Judge scoring",
+    )
+    parser.add_argument(
+        "--judge-model", default=os.getenv("QWEN_JUDGE_MODEL", "qwen3.5-plus"),
+        help="Judge model name (default: qwen3.5-plus)",
+    )
+    parser.add_argument(
+        "--judge-base-url",
+        default=os.getenv("QWEN_JUDGE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
+        help="Judge base URL (default: DashScope Intl compatible-mode)",
     )
     parser.add_argument(
         "--max-cases", type=int, default=0,
         help="Max number of cases to run (0 = all)",
     )
     args = parser.parse_args()
+
+    # Apply stability knobs via env
+    if args.disable_rerank:
+        os.environ["DISABLE_RERANK"] = "true"
+    if args.rag_timeout >= 0:
+        os.environ["RAG_TIMEOUT_SEC"] = str(args.rag_timeout)
+    if args.rag_scope_timeout >= 0:
+        os.environ["RAG_SCOPE_TIMEOUT_SEC"] = str(args.rag_scope_timeout)
+    if args.llm_min_interval > 0:
+        os.environ["LLM_MIN_INTERVAL_SEC"] = str(args.llm_min_interval)
 
     # Load cases
     input_path = Path(args.input)
@@ -563,6 +877,21 @@ def main() -> None:
 
     log.info(f"Loaded {len(cases)} eval cases from {input_path}")
 
+    # Judge config
+    judge_api_key = os.getenv("QWEN_API_KEY", "")
+    judge_enabled = not args.skip_judge
+    if judge_enabled and not judge_api_key:
+        log.warning("QWEN_API_KEY not set; judge will be disabled.")
+        judge_enabled = False
+    judge_cfg: JudgeConfig = {
+        "enabled": judge_enabled,
+        "model": args.judge_model,
+        "base_url": args.judge_base_url,
+        "api_key": judge_api_key,
+        "max_answer_chars": 2000,
+        "max_evidence_chars": 2000,
+    }
+
     # Run evaluation
     run_timestamp = datetime.now(timezone.utc).isoformat()
     lg_results, bl_results = asyncio.run(
@@ -571,6 +900,7 @@ def main() -> None:
             concurrency=args.concurrency,
             run_baseline=not args.skip_baseline,
             delay_between=args.delay,
+            judge_cfg=judge_cfg,
         )
     )
 
@@ -596,6 +926,13 @@ def main() -> None:
                 "delay": args.delay,
                 "total_cases": len(cases),
                 "skip_baseline": args.skip_baseline,
+                "disable_rerank": args.disable_rerank,
+                "rag_timeout": args.rag_timeout,
+                "rag_scope_timeout": args.rag_scope_timeout,
+                "llm_min_interval": args.llm_min_interval,
+                "judge_enabled": judge_cfg["enabled"],
+                "judge_model": judge_cfg["model"],
+                "judge_base_url": judge_cfg["base_url"],
             },
             "langgraph": {
                 "metrics": lg_metrics,
@@ -627,10 +964,12 @@ def main() -> None:
     print("=" * 60)
     print(f"LangGraph:  Completion={lg_metrics['completion_rate']}%  "
           f"Rescue={lg_metrics['rescue_rate']}%  "
-          f"p95={lg_metrics['p95_latency_ms']}ms")
+          f"p95={lg_metrics['p95_latency_ms']}ms  "
+          f"Judge={lg_metrics.get('avg_judge_overall', 0)}")
     if bl_results:
         print(f"Baseline:   Completion={bl_metrics['completion_rate']}%  "
-              f"p95={bl_metrics['p95_latency_ms']}ms")
+              f"p95={bl_metrics['p95_latency_ms']}ms  "
+              f"Judge={bl_metrics.get('avg_judge_overall', 0)}")
     print(f"\nResults: {output_path}")
     print(f"Report:  {report_path}")
 

@@ -101,6 +101,9 @@ def rag_worker_node(state: AgentState) -> AgentState:
     )
 
     # ── 主检索：逐个议题变体检索，合并结果 ──────────────────────────────────
+    rag_timeout = float(os.getenv("RAG_TIMEOUT_SEC", "400"))
+    rag_scope_timeout = float(os.getenv("RAG_SCOPE_TIMEOUT_SEC", "30"))
+
     def _run_retrieve():
         from data.rag_retriever import retrieve as _retrieve
         all_chunks   = []
@@ -133,12 +136,21 @@ def rag_worker_node(state: AgentState) -> AgentState:
             ),
         }
 
-    rag_result_wrap = run_with_timeout(
-        _run_retrieve,
-        timeout_seconds=400,
-        worker_name="rag_retriever",
-        trace_id=trace_id,
-    )
+    if rag_timeout <= 0:
+        rag_result_wrap = {
+            "status": "success",
+            "result": _run_retrieve(),
+            "error_type": "",
+            "error_detail": "",
+            "latency_ms": 0,
+        }
+    else:
+        rag_result_wrap = run_with_timeout(
+            _run_retrieve,
+            timeout_seconds=rag_timeout,
+            worker_name="rag_retriever",
+            trace_id=trace_id,
+        )
 
     if rag_result_wrap["status"] != "success":
         log.error(f"RAG 检索失败：{rag_result_wrap['error_type']}")
@@ -193,12 +205,21 @@ def rag_worker_node(state: AgentState) -> AgentState:
                         chunks.append(c)
             return chunks
 
-        scope_wrap = run_with_timeout(
-            _run_scope_retrieve,
-            timeout_seconds=30,
-            worker_name="rag_scope",
-            trace_id=trace_id,
-        )
+        if rag_scope_timeout <= 0:
+            scope_wrap = {
+                "status": "success",
+                "result": _run_scope_retrieve(),
+                "error_type": "",
+                "error_detail": "",
+                "latency_ms": 0,
+            }
+        else:
+            scope_wrap = run_with_timeout(
+                _run_scope_retrieve,
+                timeout_seconds=rag_scope_timeout,
+                worker_name="rag_scope",
+                trace_id=trace_id,
+            )
         if scope_wrap["status"] == "success":
             scope_chunks = scope_wrap["result"]
             log.info(f"口径说明检索完成，{len(scope_chunks)} 个 chunk")

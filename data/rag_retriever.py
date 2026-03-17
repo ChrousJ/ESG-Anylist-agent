@@ -95,6 +95,8 @@ BGE_RERANK_MODEL   = "BAAI/bge-reranker-v2-m3"
 GEMINI_MODEL       = "gemini-2.5-flash-preview-05-20"
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY", "")
 
+# Evaluation / stability toggles
+DISABLE_RERANK = os.getenv("DISABLE_RERANK", "false").strip().lower() in {"1", "true", "yes", "y"}
 # 检索超参
 VECTOR_TOP_K       = 20     # 向量检索召回数
 BM25_TOP_K         = 20     # BM25 召回数
@@ -473,6 +475,16 @@ def rerank(
     """
     if not candidates:
         return []
+
+    if DISABLE_RERANK:
+        # Fast path: keep fused order, attach a lightweight score
+        results = []
+        for idx, item in enumerate(candidates):
+            scored = dict(item)
+            if "rerank_score" not in scored:
+                scored["rerank_score"] = round(max(0.0, 1.0 - idx * 0.01), 4)
+            results.append(scored)
+        return results[:top_k]
 
     reranker = _get_rerank_model()
 
