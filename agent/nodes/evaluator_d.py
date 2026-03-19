@@ -46,7 +46,6 @@ import logging
 import os
 from typing import Optional
 
-from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
@@ -54,12 +53,16 @@ from agent.state import (
     AgentState, MissingDataReport, ScopeConsistencyDict, get_sql_result_dataframe
 )
 from agent.tracing import trace_node, TraceLogger, llm_call_with_retry
-from agent.data_dictionary import SCOPE_CAVEATS
+from agent.llm_provider import get_default_model, llm_generate_content
+from agent.data_dictionary import SCOPE_CAVEATS, get_metric_display
 
 load_dotenv()
 log     = logging.getLogger(__name__)
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-_MODEL  = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-05-20")
+_MODEL = os.getenv("LLM_MAIN_MODEL", get_default_model())
+_SCOPE_ADJUSTABLE_REPLAN = os.getenv("SCOPE_ADJUSTABLE_REPLAN", "0").strip().lower() in {
+    "1", "true", "yes", "y",
+}
+_PERCENT_METRIC_MAX = float(os.getenv("PERCENT_METRIC_MAX", "100"))
 
 # 指标权重表（权重3 = 核心，缺失触发 Re-plan）
 METRIC_WEIGHTS = {
@@ -136,6 +139,18 @@ def _check_sql(
     requested_companies = entities.get("companies", [])
     industry_norms     = INDUSTRY_MISSING_NORMS.get(industry, set())
 
+    def _is_implausible_metric_value(metric_key: str, value: object) -> bool:
+        if value is None:
+            return False
+        try:
+            _, unit = get_metric_display(metric_key)
+            numeric_value = float(value)
+        except Exception:
+            return False
+        if unit == "%" and (numeric_value < 0 or numeric_value > _PERCENT_METRIC_MAX):
+            return True
+        return False
+
     for metric in requested_metrics:
         weight = METRIC_WEIGHTS.get(metric, 1)
 
@@ -156,8 +171,12 @@ def _check_sql(
                            "detail": "结果集中不存在该列（低权重，跳过）"})
             continue
 
-        # 逐行检查 NULL
-        null_rows = sql_result[sql_result[metric].isnull()]
+        # 逐行检查 NULL / 明显异常值（如百分比 > 100）
+        null_mask = sql_result[metric].isnull()
+        invalid_mask = sql_result[metric].apply(
+            lambda value: _is_implausible_metric_value(metric, value)
+        )
+        null_rows = sql_result[null_mask | invalid_mask]
         total_expected = (
             len(requested_companies) * len(requested_years)
             if requested_companies and requested_years
@@ -194,7 +213,11 @@ def _check_sql(
                     "metric":  metric,
                     "company": str(row.get("company_name", "unknown")),
                     "year":    int(row.get("year", 0)),
-                    "detail":  "未披露，不参与同比/环比计算",
+                    "detail":  (
+                        "未披露，不参与同比/环比计算"
+                        if not _is_implausible_metric_value(metric, row.get(metric))
+                        else "数值明显异常，已按缺失处理"
+                    ),
                 })
 
     summary_parts = []
@@ -357,7 +380,7 @@ def _check_scope_consistency(
         try:
             def _call():
                 import re
-                resp = _client.models.generate_content(
+                resp = llm_generate_content(
                     model=_MODEL,
                     contents=prompt,
                     config=types.GenerateContentConfig(
@@ -460,12 +483,14 @@ def evaluator_d_node(state: AgentState) -> AgentState:
 
     # ── 最终判定 ─────────────────────────────────────────────────────────────
     # 过滤：L1缺失 + SQL/RAG Worker 失败 + 对齐失败 才触发 Re-plan
-    # SCOPE_ADJUSTABLE 也触发一次 Re-plan 让 Supervisor 决定如何处理
+    # SCOPE_ADJUSTABLE 默认作为 warning 透传给 Synthesizer 标注，避免无效空转。
     replan_types = {
         "L1_MISSING", "SQL_EMPTY", "SQL_YEAR_INCOMPLETE",
         "RAG_LOW_RECALL", "RAG_LOW_RELEVANCE",
-        "DATA_MISALIGN", "SCOPE_ADJUSTABLE",
+        "DATA_MISALIGN",
     }
+    if _SCOPE_ADJUSTABLE_REPLAN:
+        replan_types.add("SCOPE_ADJUSTABLE")
     replan_errors = [e for e in all_errors if e.get("type") in replan_types]
 
     if replan_errors:

@@ -49,6 +49,15 @@ HISTORY_TTL = 60 * 60 * 2   # 2小时，单位秒
 MAX_HISTORY = 10             # 最多保留10轮对话
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "true" if default else "false").strip().lower()
+    return raw in {"1", "true", "yes", "y"}
+
+
+LEGACY_MEMORY_WRITES_ENABLED = _env_flag("LEGACY_MEMORY_WRITES_ENABLED", False)
+QUERY_ANALYTICS_ENABLED = _env_flag("QUERY_ANALYTICS_ENABLED", True)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Redis 短期记忆
 # ══════════════════════════════════════════════════════════════════════════════
@@ -256,15 +265,23 @@ def memory_updater_node(state: AgentState) -> AgentState:
     state["history"] = history
 
     # ── 2. 写入 Redis（短期） ──────────────────────────────────────────────────
-    _update_redis_history(conversation_id, history, log)
+    if LEGACY_MEMORY_WRITES_ENABLED:
+        _update_redis_history(conversation_id, history, log)
+    else:
+        log.info("skip legacy redis history write; checkpointer is primary memory backend")
 
     # ── 3. 更新用户偏好（长期） ───────────────────────────────────────────────
     entities = state.get("entities", {})
-    if entities.get("companies") or entities.get("metrics"):
+    if LEGACY_MEMORY_WRITES_ENABLED and (entities.get("companies") or entities.get("metrics")):
         _update_user_preferences(conversation_id, entities, log)
+    elif not LEGACY_MEMORY_WRITES_ENABLED:
+        log.info("skip legacy sqlite preference write; checkpointer is primary memory backend")
 
     # ── 4. 记录 query_log ────────────────────────────────────────────────────
-    _log_query(state, log)
+    if QUERY_ANALYTICS_ENABLED:
+        _log_query(state, log)
+    else:
+        log.info("skip query_log write; analytics disabled by config")
 
     log.info("记忆更新完成")
     return state

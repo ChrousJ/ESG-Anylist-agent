@@ -89,11 +89,15 @@ from typing import Literal
 # START / END: 特殊节点，代表流程的入口和出口
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
+from google.genai import types
+from agent.llm_provider import get_default_model, llm_generate_content
+from agent.tracing import TraceLogger, llm_call_with_retry
 
 # ── 导入状态定义和所有节点函数 ─────────────────────────────────────────────────
 # 每个节点函数的签名都是：(state: AgentState) -> AgentState
 # 即接收当前状态，返回修改后的状态
 from agent.state import AgentState, apply_degraded_state
+from agent.data_dictionary import get_metric_display
 from agent.nodes.context         import context_node          # ① 上下文理解
 from agent.nodes.supervisor      import supervisor_node       # ② 任务规划
 from agent.nodes.schema_injector import schema_injector_node  # ③ 数据库 Schema 注入
@@ -142,6 +146,13 @@ def _get_checkpointer():
         _checkpointer_instance = _build_checkpointer()
     return _checkpointer_instance
 
+
+def get_checkpointer_backend_name() -> str:
+    checkpointer = _get_checkpointer()
+    if checkpointer is None:
+        return "disabled"
+    return checkpointer.__class__.__name__
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 终止节点：知识问答直答、澄清反问、降级响应
 # ══════════════════════════════════════════════════════════════════════════════
@@ -152,22 +163,15 @@ def knowledge_answer_node(state: AgentState) -> AgentState:
     """
     纯知识问题：直接用 Gemini 回答，不做任何检索。
     """
-    import os, re
-    from google import genai
-    from google.genai import types
-    from agent.tracing import TraceLogger, llm_call_with_retry
-
     trace_id = state.get("trace_id", "")
     log_     = TraceLogger("knowledge_answer", trace_id)
     query    = state.get("resolved_query", state.get("user_query", ""))
 
     log_.info(f"纯知识问答：{query[:60]}")
-
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-    model  = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-05-20")
+    model = os.getenv("LLM_MAIN_MODEL", get_default_model())
 
     def _call():
-        resp = client.models.generate_content(
+        resp = llm_generate_content(
             model=model,
             contents=query,
             config=types.GenerateContentConfig(
@@ -232,6 +236,91 @@ def degraded_response_node(state: AgentState) -> AgentState:
     )
 
 
+def no_data_response_node(state: AgentState) -> AgentState:
+    """
+    对“数据覆盖不足 / 当前库无披露记录”给出受控响应。
+    这类情况不是系统故障，不应混入 degraded。
+    """
+    trace_id = state.get("trace_id", "")
+    log_ = TraceLogger("no_data_response", trace_id)
+
+    entities = state.get("entities", {}) or {}
+    companies = entities.get("companies", []) or []
+    years = entities.get("years", []) or []
+    metrics = entities.get("metrics", []) or []
+    supported_companies = entities.get("supported_companies", []) or []
+    unsupported_companies = entities.get("unsupported_companies", []) or []
+    mode = state.get("terminal_response_mode", "")
+    reason = state.get("terminal_response_reason", "")
+
+    metric_labels: list[str] = []
+    for metric_key in metrics[:4]:
+        metric_cn, _ = get_metric_display(metric_key)
+        metric_labels.append(metric_cn or metric_key)
+
+    company_text = "、".join(companies) if companies else "目标公司"
+    year_text = "、".join(str(year) for year in years) if years else "当前问题涉及年份"
+    metric_text = "、".join(metric_labels) if metric_labels else "相关ESG指标"
+
+    if mode == "coverage_gap":
+        analysis = "\n".join(
+            [
+                "### Layer-1: Data Availability",
+                f"- 查询对象：{company_text}",
+                f"- 查询范围：{year_text} / {metric_text}",
+                f"- 当前项目数据集未覆盖：{'、'.join(unsupported_companies) if unsupported_companies else company_text}",
+                "",
+                "### Layer-2: Evidence Check",
+                "- 已完成结构化库与报告检索双路径检查，均未发现可用于回答该问题的证据。",
+                "- 这表示“当前项目语料未覆盖”，不表示公司本身没有ESG披露。",
+                "",
+                "### Layer-3: Safe Conclusion",
+                "- 为避免幻觉，本次不输出具体数值、趋势或横向排名结论。",
+                "- 建议改查当前项目已覆盖公司，或补充该公司的ESG报告后再分析。",
+            ]
+        )
+        key_findings = [
+            f"当前项目数据集未覆盖 {company_text}",
+            "结构化库与RAG均无可用证据，已安全拒绝输出具体数值",
+        ]
+    else:
+        supported_text = "、".join(supported_companies) if supported_companies else company_text
+        analysis = "\n".join(
+            [
+                "### Layer-1: Data Availability",
+                f"- 查询对象：{supported_text}",
+                f"- 查询范围：{year_text} / {metric_text}",
+                "- 公司在当前项目覆盖范围内，但本次问题对应的年份/指标缺少足够可用证据。",
+                "",
+                "### Layer-2: Evidence Check",
+                "- 已完成结构化库与报告检索双路径检查，未获得可支撑定量结论的记录。",
+                "- 这类缺失应解释为“数据缺失/未披露”，不能等价成 0 或负向结论。",
+                "",
+                "### Layer-3: Safe Conclusion",
+                "- 本次返回“数据缺失/未披露”，不输出未经证据支持的具体数字或比较结论。",
+                "- 若需要继续分析，建议更换年份、指标，或补充原始ESG报告材料。",
+            ]
+        )
+        key_findings = [
+            f"{supported_text} 在当前年份/指标上缺少可用证据",
+            "系统已按“未披露/证据不足”处理，未输出无依据数字",
+        ]
+
+    if reason:
+        analysis += f"\n\n> 系统说明：{reason}"
+
+    log_.info(f"terminal no-data response emitted: mode={mode or 'not_disclosed'}")
+    state["analysis"] = analysis
+    state["key_findings"] = key_findings
+    state["eval_o_status"] = "pass"
+    state["eval_o_errors"] = []
+    state["is_degraded"] = False
+    state["degraded_reason"] = ""
+    state["terminal_response_mode"] = ""
+    state["terminal_response_reason"] = ""
+    return state
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 路由函数（条件边 / Conditional Edges）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -287,6 +376,22 @@ def route_after_schema_injector(
     return targets if targets else ["sql_worker"]  # 兜底
 
 
+def route_after_supervisor(
+    state: AgentState,
+) -> Literal["schema_injector", "degraded_response", "no_data_response"]:
+    """
+    Supervisor 之后先判断是否已经形成终态响应，避免 replan 超限后继续空转 worker。
+    """
+    terminal_mode = state.get("terminal_response_mode", "")
+    if terminal_mode:
+        log.info(f"路由：terminal_response({terminal_mode}) → no_data_response")
+        return "no_data_response"
+    if state.get("is_degraded"):
+        log.info("路由：supervisor degraded → degraded_response")
+        return "degraded_response"
+    return "schema_injector"
+
+
 def route_after_aggregator(
     state: AgentState,
 ) -> Literal["evaluator_d", "degraded_response"]:
@@ -300,7 +405,10 @@ def route_after_aggregator(
     is_degraded 可能在 Re-plan 循环中被设置为 True（重试次数超限），
     此时即使 aggregated_status 不是 both_failed，也应该走降级路径。
     """
-    if state.get("is_degraded") or state.get("aggregated_status") == "both_failed":
+    if state.get("is_degraded"):
+        log.info("路由：degraded flag → degraded_response")
+        return "degraded_response"
+    if state.get("aggregated_status") == "both_failed":
         log.info("路由：both_failed → degraded_response")
         return "degraded_response"
     return "evaluator_d"
@@ -388,6 +496,7 @@ def build_graph() -> StateGraph:
     builder.add_node("evaluator_o",       evaluator_o_node)
     builder.add_node("memory_updater",    memory_updater_node)
     builder.add_node("degraded_response", degraded_response_node)
+    builder.add_node("no_data_response",  no_data_response_node)
 
     # ── 起点 → context ────────────────────────────────────────────────────────
     builder.add_edge(START, "context")
@@ -408,8 +517,16 @@ def build_graph() -> StateGraph:
     builder.add_edge("knowledge_answer", "memory_updater")
     builder.add_edge("clarify",          "memory_updater")
 
-    # ── supervisor → schema_injector ─────────────────────────────────────────
-    builder.add_edge("supervisor", "schema_injector")
+    # ── supervisor → schema_injector / terminal responses ────────────────────
+    builder.add_conditional_edges(
+        "supervisor",
+        route_after_supervisor,
+        {
+            "schema_injector": "schema_injector",
+            "degraded_response": "degraded_response",
+            "no_data_response": "no_data_response",
+        },
+    )
 
     # ── schema_injector → fan-out（并行 SQL + RAG）────────────────────────────
     # 【并行执行原理】
@@ -468,6 +585,7 @@ def build_graph() -> StateGraph:
 
     # ── degraded_response → memory_updater ───────────────────────────────────
     builder.add_edge("degraded_response", "memory_updater")
+    builder.add_edge("no_data_response", "memory_updater")
 
     # ── memory_updater → END ──────────────────────────────────────────────────
     # 所有路径最终都汇聚到 memory_updater → END，确保每次执行都会保存记忆。
@@ -497,7 +615,10 @@ def get_graph():
     if _graph_instance is None:
         log.info("编译 LangGraph 图...")
         _graph_instance = build_graph()
-        log.info("LangGraph 图编译完成")
+        log.info(
+            "LangGraph 图编译完成 (checkpointer=%s)",
+            get_checkpointer_backend_name(),
+        )
     return _graph_instance
 
 

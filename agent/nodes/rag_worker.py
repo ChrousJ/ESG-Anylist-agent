@@ -42,6 +42,7 @@ log = logging.getLogger(__name__)
 
 # 口径说明检索的关键词模板
 _SCOPE_KEYWORDS = ["计算方法", "统计口径", "包含范围", "披露依据", "核算边界", "计量方式"]
+_VALID_INDUSTRIES = {"bank", "power", "new_energy"}
 
 
 def _build_scope_query(metric_key: str) -> str:
@@ -84,7 +85,8 @@ def rag_worker_node(state: AgentState) -> AgentState:
 
     companies  = entities.get("companies", [])
     years      = entities.get("years", [])
-    industries = [entities.get("industry", "")] if entities.get("industry") else []
+    industry = entities.get("industry", "")
+    industries = [industry] if industry in _VALID_INDUSTRIES else []
     metrics    = entities.get("metrics", [])
 
     # Supervisor 注入的实质性议题变体
@@ -92,8 +94,22 @@ def rag_worker_node(state: AgentState) -> AgentState:
     rag_strategy = plan.get("rag_strategy", "standard")
     base_query   = state.get("resolved_query", state.get("user_query", ""))
 
-    # relaxed 策略：降低 rerank 阈值
-    threshold = 0.2 if rag_strategy == "relaxed" else 0.3
+    # NOTE: All retrieval thresholds are env-configurable for interview-time tuning.
+    threshold_standard = float(os.getenv("RAG_RERANK_THRESHOLD_STANDARD", "0.3"))
+    threshold_relaxed = float(os.getenv("RAG_RERANK_THRESHOLD_RELAXED", "0.2"))
+    threshold_recall_fallback = float(os.getenv("RAG_RERANK_THRESHOLD_RECALL_FALLBACK", "0.1"))
+    threshold = (
+        threshold_recall_fallback if rag_strategy == "recall_fallback"
+        else threshold_relaxed if rag_strategy == "relaxed"
+        else threshold_standard
+    )
+    top_k_standard = int(os.getenv("RAG_TOP_K_STANDARD", "5"))
+    top_k_recall_fallback = int(os.getenv("RAG_TOP_K_RECALL_FALLBACK", "8"))
+    first_pass_top_k = top_k_recall_fallback if rag_strategy == "recall_fallback" else top_k_standard
+    fallback_min_chunks = int(os.getenv("RAG_RECALL_FALLBACK_MIN_CHUNKS", "4"))
+    final_top_k_standard = int(os.getenv("RAG_FINAL_TOP_K", "10"))
+    final_top_k_recall_fallback = int(os.getenv("RAG_FINAL_TOP_K_RECALL_FALLBACK", "12"))
+    final_top_k = final_top_k_recall_fallback if rag_strategy == "recall_fallback" else final_top_k_standard
 
     log.info(
         f"开始检索，strategy={rag_strategy}",
@@ -110,26 +126,59 @@ def rag_worker_node(state: AgentState) -> AgentState:
         seen_ids     = set()
         query_list   = materiality_variants if materiality_variants else [base_query]
 
-        for variant_query in query_list:
-            res = _retrieve(
-                query=variant_query,
-                companies=companies if companies else None,
-                years=years if years else None,
-                industries=industries if industries else None,
-                top_k=5,
-                rewrite=False,   # 变体已由 Supervisor 生成，不再二次改写
-            )
-            for chunk in res.get("chunks", []):
-                cid = chunk.get("chunk_id", "")
-                if cid not in seen_ids and chunk.get("rerank_score", 0) >= threshold:
-                    seen_ids.add(cid)
-                    all_chunks.append(chunk)
+        def _collect_chunks(
+            *,
+            companies_filter,
+            years_filter,
+            industries_filter,
+            top_k: int,
+        ) -> None:
+            for variant_query in query_list:
+                res = _retrieve(
+                    query=variant_query,
+                    companies=companies_filter,
+                    years=years_filter,
+                    industries=industries_filter,
+                    top_k=top_k,
+                    rewrite=False,   # 变体已由 Supervisor 生成，不再二次改写
+                )
+                for chunk in res.get("chunks", []):
+                    cid = chunk.get("chunk_id", "")
+                    if cid not in seen_ids and chunk.get("rerank_score", 0) >= threshold:
+                        seen_ids.add(cid)
+                        all_chunks.append(chunk)
 
-        # 按 rerank_score 降序，取 top-10
+        # First pass: strict filters from extracted entities.
+        _collect_chunks(
+            companies_filter=companies if companies else None,
+            years_filter=years if years else None,
+            industries_filter=industries if industries else None,
+            top_k=first_pass_top_k,
+        )
+
+        if rag_strategy == "recall_fallback" and len(all_chunks) < fallback_min_chunks:
+            # NOTE: Recall fallback broadens filters progressively to reduce degraded cases.
+            _collect_chunks(
+                companies_filter=companies if companies else None,
+                years_filter=None,
+                industries_filter=industries if industries else None,
+                top_k=top_k_recall_fallback,
+            )
+
+        if rag_strategy == "recall_fallback" and len(all_chunks) < fallback_min_chunks:
+            _collect_chunks(
+                companies_filter=None,
+                years_filter=None,
+                industries_filter=industries if industries else None,
+                top_k=top_k_recall_fallback,
+            )
+
+        # 按 rerank_score 降序，取最终 top-k
         all_chunks.sort(key=lambda x: -x.get("rerank_score", 0))
+        final_chunks = all_chunks[:final_top_k]
         return {
-            "chunks":       all_chunks[:10],
-            "final_count":  len(all_chunks[:10]),
+            "chunks":       final_chunks,
+            "final_count":  len(final_chunks),
             "low_relevance": (
                 not all_chunks or
                 all_chunks[0].get("rerank_score", 0) < threshold

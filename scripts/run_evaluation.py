@@ -70,10 +70,41 @@ def _truncate(text: str, max_chars: int) -> str:
     return text if len(text) <= max_chars else text[:max_chars] + "..."
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    if isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if hasattr(value, "item"):
+        try:
+            return _json_safe(value.item())
+        except Exception:
+            pass
+    return str(value)
+
+
 def _summarize_sql_result(sql_result: Any, max_rows: int = 5) -> dict[str, Any]:
-    if not sql_result:
+    if sql_result is None:
         return {}
-    # Most common serialized form: list[dict]
+    if hasattr(sql_result, "empty") and hasattr(sql_result, "head") and hasattr(sql_result, "to_dict"):
+        if bool(getattr(sql_result, "empty")):
+            return {}
+        preview_df = sql_result.head(max_rows)
+        return {
+            "row_count": int(len(sql_result)),
+            "columns": [str(c) for c in list(getattr(sql_result, "columns", []))],
+            "rows_preview": _json_safe(preview_df.to_dict(orient="records")),
+        }
     if isinstance(sql_result, list):
         rows = [r for r in sql_result if isinstance(r, dict)]
         preview = rows[:max_rows]
@@ -81,14 +112,20 @@ def _summarize_sql_result(sql_result: Any, max_rows: int = 5) -> dict[str, Any]:
         return {
             "row_count": len(rows),
             "columns": cols,
-            "rows_preview": preview,
+            "rows_preview": _json_safe(preview),
         }
-    # Fallback if dict-like
     if isinstance(sql_result, dict):
+        if "_type" in sql_result and "data" in sql_result:
+            rows = list(sql_result.get("data", []))
+            return {
+                "row_count": len(rows),
+                "columns": list(sql_result.get("columns", [])),
+                "rows_preview": _json_safe(rows[:max_rows]),
+            }
         return {
             "row_count": sql_result.get("row_count", ""),
             "columns": sql_result.get("columns", []),
-            "rows_preview": sql_result.get("rows_preview", []),
+            "rows_preview": _json_safe(sql_result.get("rows_preview", [])),
         }
     return {}
 
@@ -103,9 +140,50 @@ def _summarize_sources(sources: list[dict], max_items: int = 5) -> list[dict]:
             "company": s.get("company", ""),
             "year": s.get("year", ""),
             "page": s.get("page", ""),
+            "file": s.get("file", ""),
             "score": s.get("score", 0),
+            "excerpt": _truncate(s.get("excerpt", "") or s.get("content", ""), 220),
         })
     return preview
+
+
+def _build_langgraph_judge_evidence(final_state: dict[str, Any]) -> dict[str, Any]:
+    rag_result = final_state.get("rag_result") or {}
+    rag_chunks = []
+    for chunk in (rag_result.get("chunks") or [])[:5]:
+        rag_chunks.append({
+            "company": chunk.get("company_name", ""),
+            "year": chunk.get("year", ""),
+            "page": chunk.get("page_num", ""),
+            "file": chunk.get("source_file", ""),
+            "score": chunk.get("rerank_score", 0),
+            "excerpt": _truncate(chunk.get("text", ""), 500),
+        })
+
+    return {
+        "sql": {
+            "query": _truncate(final_state.get("sql_query_executed", ""), 400),
+            "result": _summarize_sql_result(final_state.get("sql_result")),
+        },
+        "rag": {
+            "top_chunks": rag_chunks,
+        },
+        "citations": _summarize_sources(final_state.get("sources", [])),
+        "quality_state": {
+            "eval_o_status": final_state.get("eval_o_status", ""),
+            "is_degraded": final_state.get("is_degraded", False),
+            "missing_summary": _truncate(final_state.get("missing_summary", ""), 300),
+        },
+    }
+
+
+def _build_baseline_judge_evidence(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tool_observations": result.get("tool_observations", []),
+        "quality_state": {
+            "status": result.get("status", ""),
+        },
+    }
 
 
 def _extract_json(text: str) -> Optional[dict[str, Any]]:
@@ -173,6 +251,7 @@ def _judge_answer(
     )
     user = (
         "Evaluate the answer to the query. Use the evidence if provided. "
+        "When evidence coverage is partial, mention that limitation in notes. "
         "If evidence is empty, set faithfulness_score to null.\n\n"
         f"Query:\n{query}\n\n"
         f"Answer:\n{ans_text}\n\n"
@@ -225,7 +304,7 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
     Returns standardized result dict.
     """
     from agent.graph import get_graph
-    from agent.state import make_initial_state
+    from agent.state import deserialize_sql_result, make_initial_state
     from agent.tracing import generate_trace_id, generate_request_id
 
     trace_id = generate_trace_id()
@@ -251,8 +330,12 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
         is_degraded = final_state.get("is_degraded", False)
         query_class = final_state.get("query_class", "")
         key_findings = final_state.get("key_findings", [])
-        sql_result_preview = _summarize_sql_result(final_state.get("sql_result"))
+        sql_result_value = deserialize_sql_result(final_state.get("sql_result"))
+        sql_result_preview = _summarize_sql_result(sql_result_value)
         sources_preview = _summarize_sources(final_state.get("sources", []))
+        judge_evidence = _build_langgraph_judge_evidence(
+            {**final_state, "sql_result": sql_result_value}
+        )
 
         # Tool error rate (SQL/RAG workers)
         tool_nodes = [nt for nt in node_trace if nt.get("node_name") in ("sql_worker", "rag_worker")]
@@ -261,10 +344,10 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
         tool_error_rate = round(tool_failed / tool_total, 4) if tool_total else 0.0
 
         # Determine status
-        if analysis and eval_o_status in ("pass", "degraded"):
-            status = "success"
-        elif is_degraded:
+        if is_degraded or eval_o_status == "degraded":
             status = "degraded"
+        elif analysis and eval_o_status == "pass":
+            status = "success"
         elif not analysis:
             status = "empty"
         else:
@@ -307,6 +390,7 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
             "key_findings": key_findings,
             "sql_result_preview": sql_result_preview,
             "sources_preview": sources_preview,
+            "judge_evidence": judge_evidence,
             "tool_failed_count": tool_failed,
             "tool_total_count": tool_total,
             "tool_error_rate": tool_error_rate,
@@ -340,6 +424,7 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
             "key_findings": [],
             "sql_result_preview": {},
             "sources_preview": [],
+            "judge_evidence": {},
             "tool_failed_count": 0,
             "tool_total_count": 0,
             "tool_error_rate": 0.0,
@@ -386,6 +471,7 @@ def _run_baseline_agent(query: str, case_id: str) -> dict[str, Any]:
             "key_findings": [],
             "sql_result_preview": {},
             "sources_preview": [],
+            "judge_evidence": _build_baseline_judge_evidence(result),
             "tool_failed_count": 0,
             "tool_total_count": 0,
             "tool_error_rate": 0.0,
@@ -419,6 +505,7 @@ def _run_baseline_agent(query: str, case_id: str) -> dict[str, Any]:
             "key_findings": [],
             "sql_result_preview": {},
             "sources_preview": [],
+            "judge_evidence": {},
             "tool_failed_count": 0,
             "tool_total_count": 0,
             "tool_error_rate": 0.0,
@@ -512,6 +599,7 @@ def _generate_report(
     lines.append(f"> Total cases: {len(cases)}")
     lines.append(f"> LangGraph nodes: context -> supervisor -> schema_injector -> sql/rag workers -> evaluator_d -> map_reduce -> synthesizer -> evaluator_o -> memory_updater")
     lines.append(f"> Baseline: ReAct agent (Qwen LLM + SQL/RAG tools, no quality loops)")
+    lines.append("> Judge note: scores are only as reliable as the packaged evidence. This report includes SQL row previews and raw RAG excerpts when available.")
     lines.append("")
 
     # ── Overall Comparison ────────────────────────────────────────────────────
@@ -707,9 +795,11 @@ def _generate_report(
         lines.append(f"2. **Rescue Rate**: LangGraph corrected {lg_metrics['rescued']} case(s) via re-plan/eval loops — a capability the baseline lacks entirely.")
     else:
         lines.append(f"2. **Rescue Rate**: No rescue events triggered in this run (expected for clean inputs).")
-    lines.append(f"3. **Latency**: LangGraph p95={lg_metrics['p95_latency_ms']}ms, ReAct p95={bl_metrics.get('p95_latency_ms', 'N/A')}ms. The multi-node pipeline adds latency but provides quality guarantees.")
+    lines.append(f"3. **Latency**: LangGraph p95={lg_metrics['p95_latency_ms']}ms, ReAct p95={bl_metrics.get('p95_latency_ms', 'N/A')}ms. The multi-node pipeline trades latency for explicit control, repair loops, and safer degradation.")
     if lg_metrics.get('degraded', 0) > 0:
         lines.append(f"4. **Graceful Degradation**: {lg_metrics['degraded']} case(s) produced degraded responses with clear explanations, rather than silent failures.")
+    if lg_metrics.get("avg_judge_overall", 0) or bl_metrics.get("avg_judge_overall", 0):
+        lines.append("5. **Judge Interpretation**: Treat judge scores as directional. Low evidence coverage or truncated citations can depress faithfulness scores even when the answer text itself is reasonable.")
     lines.append("")
 
     return "\n".join(lines)
@@ -741,8 +831,7 @@ async def _run_all(
             )
             if judge_cfg and judge_cfg.get("enabled") and result.get("analysis_full"):
                 evidence = {
-                    "sql_result_preview": result.get("sql_result_preview", {}),
-                    "sources_preview": result.get("sources_preview", []),
+                    **result.get("judge_evidence", {}),
                 }
                 judge_result = await loop.run_in_executor(
                     None, _judge_answer, case["query"], result.get("analysis_full", ""), evidence, judge_cfg
@@ -763,7 +852,7 @@ async def _run_all(
                 None, _run_baseline_agent, case["query"], case["id"]
             )
             if judge_cfg and judge_cfg.get("enabled") and result.get("analysis_full"):
-                evidence = {}
+                evidence = result.get("judge_evidence", {})
                 judge_result = await loop.run_in_executor(
                     None, _judge_answer, case["query"], result.get("analysis_full", ""), evidence, judge_cfg
                 )

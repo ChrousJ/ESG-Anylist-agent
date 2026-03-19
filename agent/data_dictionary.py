@@ -815,9 +815,9 @@ def _match_few_shots(
 # ══════════════════════════════════════════════════════════════════════════════
 
 METRIC_DISPLAY_NAMES: dict[str, dict] = {
-    "scope_1_emissions":          {"cn": "范围一碳排放",      "unit": "万tCO2e"},
-    "scope_2_emissions":          {"cn": "范围二碳排放",      "unit": "万tCO2e"},
-    "scope_3_emissions":          {"cn": "范围三碳排放",      "unit": "万tCO2e"},
+    "scope_1_emissions":          {"cn": "范围一碳排放",      "unit": "tCO2e"},
+    "scope_2_emissions":          {"cn": "范围二碳排放",      "unit": "tCO2e"},
+    "scope_3_emissions":          {"cn": "范围三碳排放",      "unit": "tCO2e"},
     "total_energy_consumption":   {"cn": "综合能耗",          "unit": "万GJ"},
     "energy_intensity":           {"cn": "能耗强度",          "unit": "GJ/亿元"},
     "green_finance_balance":      {"cn": "绿色贷款余额",      "unit": "亿元"},

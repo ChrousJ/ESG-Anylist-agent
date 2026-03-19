@@ -43,21 +43,102 @@ import json
 import logging
 import re
 import os
+import sqlite3
+from functools import lru_cache
 from datetime import datetime, timezone
 
-from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
 from agent.state import AgentState, EntityDict, append_node_trace, format_degraded_reason
 from agent.tracing import trace_node, TraceLogger, llm_call_with_retry
+from agent.llm_provider import get_default_model, llm_generate_content
 
 load_dotenv()
 
 log = logging.getLogger(__name__)
+_MODEL = os.getenv("LLM_MAIN_MODEL", get_default_model())
+_DB_PATH = os.getenv("DB_PATH", os.path.join("data", "esg_data.db"))
+_INDUSTRY_TABLES: dict[str, str] = {
+    "new_energy": "esg_auto_metrics",
+    "bank": "esg_banking_metrics",
+    "power": "esg_power_metrics",
+}
 
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-_MODEL  = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-05-20")
+
+@lru_cache(maxsize=1)
+def _load_supported_company_industries() -> dict[str, str]:
+    """
+    从当前结构化指标表加载公司 -> 行业映射。
+
+    注意：项目现有 sqlite 库没有 company_info 表，因此这里直接以 metrics 表为准。
+    """
+    mapping: dict[str, str] = {}
+
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+    except Exception:
+        return mapping
+
+    try:
+        for industry, table_name in _INDUSTRY_TABLES.items():
+            try:
+                rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT company_name
+                    FROM {table_name}
+                    WHERE company_name IS NOT NULL AND TRIM(company_name) <> ''
+                    """
+                ).fetchall()
+            except Exception:
+                continue
+
+            for row in rows:
+                company_name = str(row[0]).strip()
+                if company_name:
+                    mapping[company_name] = industry
+
+        try:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT company_name, industry
+                FROM esg_universal_metrics
+                WHERE company_name IS NOT NULL
+                  AND industry IN ('bank', 'power', 'new_energy')
+                """
+            ).fetchall()
+        except Exception:
+            rows = []
+
+        for row in rows:
+            company_name = str(row[0]).strip()
+            industry = str(row[1]).strip()
+            if company_name and industry:
+                mapping.setdefault(company_name, industry)
+    finally:
+        conn.close()
+
+    return mapping
+
+
+@lru_cache(maxsize=256)
+def _lookup_company_industry(company_name: str) -> str:
+    """从结构化表查询公司的标准行业，避免别名集合漏判。"""
+    if not company_name:
+        return ""
+    return _load_supported_company_industries().get(str(company_name).strip(), "")
+
+
+def _split_supported_companies(companies: list[str]) -> tuple[list[str], list[str]]:
+    """拆分 query 中已覆盖 / 未覆盖的公司。"""
+    supported: list[str] = []
+    unsupported: list[str] = []
+    for company_name in companies:
+        if _lookup_company_industry(company_name):
+            supported.append(company_name)
+        else:
+            unsupported.append(company_name)
+    return supported, unsupported
 
 # ── 公司名规范化映射（别名 → 标准名） ────────────────────────────────────────
 COMPANY_ALIASES: dict[str, str] = {
@@ -75,7 +156,6 @@ COMPANY_ALIASES: dict[str, str] = {
     # 电力
     "华能": "华能国际", "华能国际": "华能国际",
     "大唐": "大唐发电", "中国大唐": "大唐发电",
-    "_大唐_RAG_": "中国大唐", # Internal hint for dual mapping if needed, but let's just add both
     "华电": "华电国际", "中国华电": "华电国际",
     "国电": "国电电力", "国家电投": "国电电力",
     "三峡": "三峡能源", "中国三峡": "三峡能源",
@@ -183,6 +263,18 @@ def _extract_years(query: str) -> list[int]:
     explicit = re.findall(r"20(2[0-9])", query)
     years = [int("20" + y) for y in explicit]
 
+    # 匹配年份区间，补齐中间年份（如 2022到2024 -> [2022,2023,2024]）。
+    ranges: list[tuple[int, int]] = []
+    for start, end in re.findall(r"(20\d{2})\s*(?:-|~|—|–|到|至)\s*(20\d{2})", query):
+        ranges.append((int(start), int(end)))
+    for start, end in re.findall(r"(?<!\d)(2\d)\s*(?:-|~|—|–|到|至)\s*(2\d)(?:年)?", query):
+        ranges.append((int("20" + start), int("20" + end)))
+    for start, end in ranges:
+        lo, hi = sorted((start, end))
+        if hi < 2022 or lo > 2024:
+            continue
+        years.extend(range(max(lo, 2022), min(hi, 2024) + 1))
+
     # "近N年" 推算
     m = re.search(r"近(\d+|两|三|四|五)年", query)
     if m:
@@ -221,6 +313,24 @@ def _extract_metrics(query: str) -> list[str]:
 
 def _infer_industry(companies: list[str], query: str) -> str:
     """根据公司列表或 query 关键词推断行业。"""
+    canonical_companies = [c for c in companies if c]
+    company_industries = {
+        company_name: _lookup_company_industry(company_name)
+        for company_name in canonical_companies
+    }
+    known_industries = {
+        industry
+        for industry in company_industries.values()
+        if industry
+    }
+    if len(known_industries) > 1:
+        return "mixed"
+    if len(known_industries) == 1 and canonical_companies and all(
+        company_industries.get(company_name)
+        for company_name in canonical_companies
+    ):
+        return next(iter(known_industries))
+
     bank_cos = {
         "工商银行", "建设银行", "农业银行", "中国银行", "交通银行",
         "招商银行", "邮储银行", "兴业银行", "浦发银行", "中信银行",
@@ -233,13 +343,24 @@ def _infer_industry(companies: list[str], query: str) -> str:
         "比亚迪", "宁德时代", "广汽集团", "上汽集团", "吉利汽车",
         "长城汽车", "长安汽车", "理想汽车", "蔚来汽车", "小鹏汽车",
     }
-    cos_set = set(companies)
+    cos_set = set(canonical_companies)
+    matched_industries: set[str] = set()
+    if cos_set & bank_cos:
+        matched_industries.add("bank")
+    if cos_set & power_cos:
+        matched_industries.add("power")
+    if cos_set & new_energy_cos:
+        matched_industries.add("new_energy")
+    if len(matched_industries) > 1:
+        return "mixed"
     if cos_set & bank_cos and not (cos_set & power_cos) and not (cos_set & new_energy_cos):
         return "bank"
     if cos_set & power_cos and not (cos_set & bank_cos) and not (cos_set & new_energy_cos):
         return "power"
     if cos_set & new_energy_cos and not (cos_set & bank_cos) and not (cos_set & power_cos):
         return "new_energy"
+    if len(set(canonical_companies)) > 1 and matched_industries:
+        return next(iter(matched_industries))
     if cos_set & bank_cos or "银行" in query or "金融" in query:
         return "bank"
     if cos_set & power_cos or "电力" in query or "发电" in query:
@@ -352,7 +473,7 @@ def _llm_complete_entities(
     )
 
     def _call():
-        resp = _client.models.generate_content(
+        resp = llm_generate_content(
             model=_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -447,10 +568,10 @@ def context_node(state: AgentState) -> AgentState:
     for c in companies:
         mapped = COMPANY_ALIASES.get(c, c)
         new_companies.append(mapped)
-        # 针对大唐的特殊处理：同时支持 SQL (大唐发电) 和 RAG (中国大唐)
-        if mapped == "大唐发电":
-            new_companies.append("中国大唐")
     companies = list(dict.fromkeys(new_companies))  # 去重保序
+    industry = _infer_industry(companies, query)
+    compare_dimension = _infer_compare_dimension(companies, years, intent)
+    supported_companies, unsupported_companies = _split_supported_companies(companies)
 
     # ── Step 5：默认年份（用户未指定时用全部可用年份） ──────────────────────
     if not years and query_class == "complex":
@@ -479,6 +600,8 @@ def context_node(state: AgentState) -> AgentState:
         intent=intent,
         industry=industry,
         compare_dimension=compare_dimension,
+        supported_companies=supported_companies,
+        unsupported_companies=unsupported_companies,
     )
 
     log.info(

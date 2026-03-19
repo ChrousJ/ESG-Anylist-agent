@@ -1,4 +1,4 @@
-const chatForm = document.getElementById('chat-form');
+﻿const chatForm = document.getElementById('chat-form');
 const queryInput = document.getElementById('query-input');
 const sendBtn = document.getElementById('send-btn');
 const chatContainer = document.getElementById('chat-container');
@@ -75,7 +75,7 @@ function createTracker() {
     const html = `
         <div class="tracker-container">
             <div class="tracker-header">
-                <span>Agent Pipeline Execution</span>
+                <span>Agent Pipeline (Node Progress Stream)</span>
                 <span class="trace-id-badge" id="current-trace">...</span>
             </div>
             <div class="nodes-timeline" id="nodes-timeline">
@@ -89,7 +89,7 @@ function createTracker() {
             </div>
         </div>
         <div id="analysis-content" class="analysis-content">
-            <p>思考中 <span class="loading-dots">...</span></p>
+            <p>鎬濊€冧腑 <span class="loading-dots">...</span></p>
         </div>
     `;
     return html;
@@ -165,14 +165,14 @@ chatForm.addEventListener('submit', async (e) => {
     
     // Start Request
     try {
-        const response = await fetch('/chat', {
+        const response = await fetch('/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: query, stream: true })
         });
         
         if (!response.ok) {
-            agentContent.innerHTML = `<p style="color:var(--node-failed)">HTTP Error: ${response.status}</p>`;
+            agentContent.innerHTML = `<p style="color:var(--node-failed)">Request failed. Please retry with a narrower query.</p>`;
             sendBtn.disabled = false;
             return;
         }
@@ -221,7 +221,7 @@ chatForm.addEventListener('submit', async (e) => {
                             if (data.key_findings && data.key_findings.length > 0) {
                                 finalHtml += `
                                     <div class="key-findings" style="margin-top:1.5rem; padding:1rem; background:rgba(35,134,54,0.1); border-radius:8px; border-left:3px solid #3fb950;">
-                                        <h4 style="margin-bottom:0.5rem; color:#3fb950;">核心摘要</h4>
+                                        <h4 style="margin-bottom:0.5rem; color:#3fb950;">鏍稿績鎽樿</h4>
                                         <ul style="margin:0; padding-left:1.5rem; font-size:0.9rem;">
                                             ${data.key_findings.map(f => `<li>${f}</li>`).join('')}
                                         </ul>
@@ -234,18 +234,18 @@ chatForm.addEventListener('submit', async (e) => {
                             if (data.chart_spec) {
                                 finalHtml += `<div id="${chartId}" class="chart-container"></div>`;
                             }
-                            
+
                             // Sources
                             if (data.sources && data.sources.length > 0) {
                                 finalHtml += `
                                     <div class="sources-section">
-                                        <h4>溯源引用 (${data.sources.length})</h4>
+                                        <h4>Evidence Sources (${data.sources.length})</h4>
                                         ${data.sources.map(s => {
                                             if (s.type === 'sql') {
-                                                return `<div class="source-item sql"><strong>[SQL]</strong> 执行查询获取结构化数据</div>`;
-                                            } else {
-                                                return `<div class="source-item rag"><strong>[PDF]</strong> ${s.company} ${s.year}年报, 第${s.page}页 (置信度: ${(s.score).toFixed(2)})</div>`;
+                                                return `<div class="source-item sql"><strong>[SQL]</strong> Structured query evidence captured.</div>`;
                                             }
+                                            const excerpt = s.excerpt ? `<div class="source-excerpt">${s.excerpt}</div>` : '';
+                                            return `<div class="source-item rag"><strong>[PDF]</strong> ${s.company} ${s.year}, p.${s.page} (score ${(s.score).toFixed(2)})${excerpt}</div>`;
                                         }).join('')}
                                     </div>
                                 `;
@@ -269,7 +269,7 @@ chatForm.addEventListener('submit', async (e) => {
                             document.getElementById('system-status').style.color = '#3fb950';
                         }
                         else if (data.event === 'error') {
-                            document.getElementById('analysis-content').innerHTML = `<p style="color:var(--node-failed)">Error: ${data.message}</p>`;
+                            document.getElementById('analysis-content').innerHTML = `<p style="color:var(--node-failed)">${data.message}</p>`;
                             document.getElementById('system-status').textContent = 'Error';
                             document.getElementById('system-status').style.color = 'var(--node-failed)';
                         }
@@ -288,3 +288,4 @@ chatForm.addEventListener('submit', async (e) => {
         chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
     }
 });
+

@@ -67,6 +67,9 @@ QWEN_BASE_URL: str = os.getenv(
     "QWEN_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 )
 QWEN_MODEL: str = os.getenv("QWEN_EVAL_MODEL", "qwen3-235b-a22b")
+# NOTE: Baseline must keep enable_thinking=false, otherwise DashScope non-streaming
+# calls can fail (HTTP 400) and invalidate baseline comparison results.
+QWEN_BASELINE_ENABLE_THINKING: bool = False
 
 if not QWEN_API_KEY:
     raise EnvironmentError(
@@ -161,6 +164,9 @@ class QwenChatModel(BaseChatModel):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
+        # NOTE: OpenAI SDK does not accept `enable_thinking` as a top-level argument.
+        # Pass it via `extra_body` so DashScope receives `enable_thinking=false`.
+        api_kwargs["extra_body"] = {"enable_thinking": QWEN_BASELINE_ENABLE_THINKING}
         if tools_spec:
             api_kwargs["tools"] = tools_spec
         if stop:
@@ -292,12 +298,13 @@ def search_esg_reports(query: str) -> str:
         # Format top chunks
         formatted = []
         for i, c in enumerate(chunks[:5], 1):
-            company = c.get("company", "")
+            company = c.get("company_name", c.get("company", ""))
             year = c.get("year", "")
             text = c.get("text", c.get("content", ""))[:300]
+            page = c.get("page_num", "")
             score = c.get("rerank_score", 0)
             formatted.append(
-                f"[{i}] {company} {year} (score={score:.2f}): {text}"
+                f"[{i}] {company} {year} p.{page} (score={score:.2f}): {text}"
             )
         return "\n\n".join(formatted)
     except Exception as e:
@@ -363,6 +370,13 @@ def run_baseline(query: str, timeout: float = 120.0) -> dict[str, Any]:
         # Extract final answer from the last AI message
         messages = result.get("messages", [])
         final_answer = ""
+        tool_observations: list[dict[str, Any]] = []
+        for msg in messages:
+            if isinstance(msg, ToolMessage):
+                tool_observations.append({
+                    "tool_name": getattr(msg, "name", ""),
+                    "content": str(msg.content)[:1200],
+                })
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and msg.content and not msg.tool_calls:
                 final_answer = msg.content
@@ -374,6 +388,7 @@ def run_baseline(query: str, timeout: float = 120.0) -> dict[str, Any]:
             "status": "success" if final_answer else "empty",
             "error": "",
             "message_count": len(messages),
+            "tool_observations": tool_observations[:6],
         }
     except Exception as e:
         latency_ms = int((time.perf_counter() - t_start) * 1000)
@@ -384,6 +399,7 @@ def run_baseline(query: str, timeout: float = 120.0) -> dict[str, Any]:
             "status": "failed",
             "error": str(e)[:300],
             "message_count": 0,
+            "tool_observations": [],
         }
 
 

@@ -40,7 +40,6 @@ import logging
 from datetime import datetime, timezone
 
 import pandas as pd
-from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
@@ -49,12 +48,12 @@ from agent.tracing import (
     trace_node, TraceLogger,
     run_with_timeout, llm_call_with_retry,
 )
+from agent.llm_provider import get_default_model, llm_generate_content
 
 load_dotenv()
 
 log    = logging.getLogger(__name__)
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-_MODEL  = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-05-20")
+_MODEL = os.getenv("LLM_MAIN_MODEL", get_default_model())
 DB_PATH = os.getenv("DB_PATH", "./data/esg_data.db")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -142,7 +141,7 @@ def _generate_sql(
     prompt = _build_text2sql_prompt(question, schema_context, entities)
 
     def _call():
-        resp = _client.models.generate_content(
+        resp = llm_generate_content(
             model=_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
@@ -289,7 +288,7 @@ def sql_worker_node(state: AgentState) -> AgentState:
                 f"请修正 SQL，只输出修正后的 SQL 语句："
             )
             fix_result = run_with_timeout(
-                lambda: _client.models.generate_content(
+                lambda: llm_generate_content(
                     model=_MODEL,
                     contents=fix_prompt,
                     config=types.GenerateContentConfig(temperature=0.0),

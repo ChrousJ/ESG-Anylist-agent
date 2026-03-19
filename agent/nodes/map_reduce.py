@@ -39,18 +39,17 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
-from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
 from agent.state import AgentState, MapReduceStats, get_sql_result_dataframe
 from agent.tracing import trace_node, TraceLogger, llm_call_with_retry
+from agent.llm_provider import get_default_model, llm_generate_content
 import time
 
 load_dotenv()
 log     = logging.getLogger(__name__)
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
-_MODEL  = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-05-20")
+_MODEL = os.getenv("LLM_MAIN_MODEL", get_default_model())
 
 # token 阈值（粗估：中文1字≈1.5token）
 TOKEN_THRESHOLD   = 12000
@@ -143,7 +142,7 @@ def _map_compress_group(
     )
 
     def _call():
-        resp = _client.models.generate_content(
+        resp = llm_generate_content(
             model=_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0.0),
@@ -182,7 +181,7 @@ def _reduce_summaries(
     )
 
     def _call():
-        resp = _client.models.generate_content(
+        resp = llm_generate_content(
             model=_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0.0),

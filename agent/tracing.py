@@ -120,9 +120,12 @@ def _extract_output_summary(state_before: dict, state_after: dict) -> str:
 
 
 def _append_node_trace(state: dict, entry: dict) -> None:
-    traces = list(state.get("node_trace", []))
-    traces.append(entry)
-    state["node_trace"] = traces
+    # IMPORTANT:
+    # AgentState["node_trace"] uses an Annotated reducer (operator.add) in LangGraph.
+    # Returning the full accumulated list from each node causes exponential duplication
+    # when the reducer merges "previous trace + returned trace".
+    # We only emit the delta entry here and let the reducer append it.
+    state["node_trace"] = [entry]
 
 
 def trace_node(node_name: str, tags: list[str] | None = None, traceable: bool = True):
@@ -263,7 +266,9 @@ def run_with_timeout(
     kwargs = kwargs or {}
     t_start = time.perf_counter()
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    executor = ThreadPoolExecutor(max_workers=1)
+    timed_out = False
+    try:
         future = executor.submit(fn, *args, **kwargs)
         try:
             result = future.result(timeout=timeout_seconds)
@@ -277,6 +282,7 @@ def run_with_timeout(
                 "latency_ms": latency_ms,
             }
         except FuturesTimeout:
+            timed_out = True
             future.cancel()
             latency_ms = int((time.perf_counter() - t_start) * 1000)
             log.warning(f"sync timeout {timeout_seconds}s {latency_ms}ms (soft)")
@@ -308,6 +314,9 @@ def run_with_timeout(
                 "error_detail": tb_str[:500],
                 "latency_ms": latency_ms,
             }
+    finally:
+        # On soft-timeout, don't block waiting for uncancelable sync I/O to finish.
+        executor.shutdown(wait=not timed_out, cancel_futures=timed_out)
 
 
 def llm_call_with_retry(
@@ -327,8 +336,20 @@ def llm_call_with_retry(
     global_min_interval = float(os.getenv("LLM_MIN_INTERVAL_SEC", "2.0"))
     jitter = float(os.getenv("LLM_JITTER_SEC", "0.5"))
     max_backoff = float(os.getenv("LLM_MAX_BACKOFF_SEC", "20.0"))
-    max_retries = int(os.getenv("LLM_MAX_RETRIES", str(max_retries)))
+    caller_retry_key = f"{caller_name.upper().replace('-', '_')}_MAX_RETRIES"
+    max_retries = int(
+        os.getenv(
+            caller_retry_key,
+            os.getenv("LLM_MAX_RETRIES", str(max_retries)),
+        )
+    )
     base_delay = float(os.getenv("LLM_BASE_DELAY_SEC", str(base_delay)))
+    retry_on_timeout = os.getenv("LLM_RETRY_ON_TIMEOUT", "0").strip().lower() in {
+        "1", "true", "yes", "y",
+    }
+    retry_on_403 = os.getenv("LLM_RETRY_ON_403", "0").strip().lower() in {
+        "1", "true", "yes", "y",
+    }
 
     # Simple process-level rate limiter
     if not hasattr(llm_call_with_retry, "_last_call_ts"):
@@ -358,10 +379,15 @@ def llm_call_with_retry(
         err_detail = (result.get("error_detail") or "")[:200]
         log.warning(f"llm_call failed status={result['status']} attempt={attempt+1} err={err_detail}")
         if attempt < max_retries:
+            status = (result.get("status") or "").lower()
+            err_lower = (result.get("error_detail") or "").lower()
+            if status == "timeout" and not retry_on_timeout:
+                break
+            if ("403" in err_lower or "forbidden" in err_lower) and not retry_on_403:
+                break
             # Exponential backoff with cap; add jitter for bursty 429
             sleep_for = min(max_backoff, base_delay * (2 ** attempt)) + jitter
             # If we detect rate-limit hints, wait a bit longer
-            err_lower = (result.get("error_detail") or "").lower()
             if "429" in err_lower or "rate" in err_lower or "quota" in err_lower:
                 sleep_for = max(sleep_for, max_backoff)
             time.sleep(sleep_for)

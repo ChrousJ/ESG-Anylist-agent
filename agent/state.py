@@ -47,6 +47,7 @@ TypedDict 是 Python 的类型注解工具。与普通 dict 不同，TypedDict �
 
 from __future__ import annotations
 
+import os
 import operator
 from typing import Any, Optional, Annotated
 from typing_extensions import TypedDict, NotRequired
@@ -64,6 +65,8 @@ class EntityDict(TypedDict, total=False):
     intent:     str          # "trend" | "compare" | "qa" | "summary" | "ranking"
     industry:   str          # "new_energy" | "power" | "bank" | "mixed"
     compare_dimension: str   # "vertical"（纵向）| "horizontal"（横向）| "both" | "none"
+    supported_companies: list[str]
+    unsupported_companies: list[str]
 
 
 class PlanDict(TypedDict, total=False):
@@ -385,6 +388,12 @@ class AgentState(TypedDict, total=False):
     degraded_reason:    str
     # 降级原因说明，透传给用户
 
+    terminal_response_mode: str
+    # "coverage_gap" | "not_disclosed" | ""
+
+    terminal_response_reason: str
+    # 终态兜底响应原因（非 degraded）
+
     node_trace:         Annotated[list[NodeTraceEntry], operator.add]
     # 所有节点的执行记录（TraceID 绑定），用于可观测性
 
@@ -475,6 +484,8 @@ def make_initial_state(
         user_preferences=user_preferences or {},
         is_degraded=False,
         degraded_reason="",
+        terminal_response_mode="",
+        terminal_response_reason="",
         node_trace=[],
         langsmith_run_url="",
     )
@@ -550,18 +561,25 @@ def has_rag_data(state: AgentState) -> bool:
 
 
 DEGRADED_REASON_CODES = {
-    "WORKERS_BOTH_FAILED": "both sql and rag failed",
-    "WORKER_FAILED": "one worker failed",
-    "EVAL_O_MAX_RETRY": "evaluator_o max retry reached",
-    "OUT_OF_SCOPE": "query out of ESG scope",
-    "UNKNOWN": "unknown failure",
+    "WORKERS_BOTH_FAILED": "Data retrieval failed across both structured and document sources.",
+    "WORKER_FAILED": "Part of the evidence pipeline failed, so a safer fallback was returned.",
+    "EVAL_O_MAX_RETRY": "The draft could not pass final quality checks, so a safer fallback was returned.",
+    "OUT_OF_SCOPE": "The request is outside the supported ESG analysis scope.",
+    "UNKNOWN": "The request could not be completed with sufficient confidence.",
 }
 
 
 def format_degraded_reason(reason_code: str, detail: str = "") -> str:
-    if detail:
-        return f"{reason_code}: {detail}"
-    return reason_code
+    friendly = DEGRADED_REASON_CODES.get(
+        reason_code,
+        DEGRADED_REASON_CODES["UNKNOWN"],
+    )
+    expose_internal = os.getenv("EXPOSE_INTERNAL_ERRORS", "false").strip().lower() in {
+        "1", "true", "yes", "y",
+    }
+    if expose_internal and detail:
+        return f"{friendly} [{reason_code}: {detail}]"
+    return friendly
 
 
 def build_degraded_message(
@@ -576,7 +594,10 @@ def build_degraded_message(
     lines.append("")
     lines.append(f"**Query**: {query}")
     lines.append(f"**Reason**: {format_degraded_reason(reason_code, reason_detail)}")
-    if trace_id:
+    expose_trace = os.getenv("EXPOSE_TRACE_IN_RESPONSE", "false").strip().lower() in {
+        "1", "true", "yes", "y",
+    }
+    if trace_id and expose_trace:
         lines.append(f"**Trace**: {trace_id}")
     if partial_analysis:
         lines.append("")

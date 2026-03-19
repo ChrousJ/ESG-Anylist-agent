@@ -48,6 +48,24 @@ def _parse_bool(value: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y"}
 
 
+def _legacy_memory_reads_enabled() -> bool:
+    return _parse_bool(os.getenv("LEGACY_MEMORY_READS_ENABLED", "false"), default=False)
+
+
+def _legacy_memory_writes_enabled() -> bool:
+    return _parse_bool(os.getenv("LEGACY_MEMORY_WRITES_ENABLED", "false"), default=False)
+
+
+def _query_analytics_enabled() -> bool:
+    return _parse_bool(os.getenv("QUERY_ANALYTICS_ENABLED", "true"), default=True)
+
+
+def _memory_mode_label() -> str:
+    if _legacy_memory_reads_enabled() or _legacy_memory_writes_enabled():
+        return "hybrid"
+    return "checkpointer_primary"
+
+
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     conversation_id: str = Field(default="")
@@ -106,10 +124,33 @@ class HealthResponse(BaseModel):
     version: str = "1.0.0"
     db_ok: bool = False
     vector_ok: bool = False
+    llm_provider: str = ""
+    main_model: str = ""
+    checkpointer_backend: str = ""
+    memory_mode: str = ""
+    legacy_memory_reads: bool = False
+    legacy_memory_writes: bool = False
+    query_analytics_enabled: bool = True
 
 
 @asynccontextmanager
-def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):
+    try:
+        from agent.graph import get_checkpointer_backend_name
+        from agent.llm_provider import get_default_model
+
+        log.info(
+            "runtime config provider=%s model=%s checkpointer=%s memory_mode=%s legacy_reads=%s legacy_writes=%s query_analytics=%s",
+            os.getenv("LLM_PROVIDER", "gemini").strip().lower(),
+            get_default_model(),
+            get_checkpointer_backend_name(),
+            _memory_mode_label(),
+            _legacy_memory_reads_enabled(),
+            _legacy_memory_writes_enabled(),
+            _query_analytics_enabled(),
+        )
+    except Exception as exc:
+        log.warning(f"runtime config introspection failed: {exc}")
     yield
 
 
@@ -176,6 +217,8 @@ async def request_trace_middleware(request: Request, call_next):
 
 
 def _load_history_from_redis(conversation_id: str) -> list[dict]:
+    if not _legacy_memory_reads_enabled():
+        return []
     if not conversation_id:
         return []
     try:
@@ -194,6 +237,8 @@ def _load_history_from_redis(conversation_id: str) -> list[dict]:
 
 
 def _load_user_preferences(conversation_id: str) -> dict:
+    if not _legacy_memory_reads_enabled():
+        return {}
     if not conversation_id:
         return {}
     try:
@@ -248,6 +293,11 @@ async def chat(request: Request, body: ChatRequest):
     t_start = time.perf_counter()
     trace_id = generate_trace_id()
     request_id = getattr(request.state, "request_id", generate_request_id())
+    if body.stream:
+        return StreamingResponse(
+            _stream_generator(body, request_id),
+            media_type="text/event-stream",
+        )
     conversation_id = body.conversation_id or trace_id
 
     history = _load_history_from_redis(conversation_id)
@@ -271,7 +321,10 @@ async def chat(request: Request, body: ChatRequest):
         )
     except Exception as e:
         log.error(f"[{trace_id}] agent failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Agent error: {str(e)[:200]}")
+        raise HTTPException(
+            status_code=500,
+            detail="Agent request failed. Please retry or narrow the query.",
+        )
 
     latency_ms = int((time.perf_counter() - t_start) * 1000)
     return _build_response(final_state, latency_ms)
@@ -368,11 +421,15 @@ async def _stream_generator(body: ChatRequest, request_id: str) -> AsyncGenerato
         yield f"data: {JSONResponse(content=complete_event).body.decode()}\n\n"
 
     except Exception as e:
-        err_event = {"event": "error", "message": str(e)[:200], "trace_id": trace_id}
+        err_event = {
+            "event": "error",
+            "message": "Request failed. Please retry or narrow the query.",
+            "trace_id": trace_id,
+        }
         yield f"data: {JSONResponse(content=err_event).body.decode()}\n\n"
 
 
-@app.post("/chat/stream", summary="Chat stream")
+@app.post("/chat/stream", summary="Chat stream (node progress)")
 async def chat_stream(request: Request, body: ChatRequest):
     request_id = getattr(request.state, "request_id", "")
     return StreamingResponse(
@@ -383,6 +440,9 @@ async def chat_stream(request: Request, body: ChatRequest):
 
 @app.get("/health", response_model=HealthResponse, summary="Health check")
 async def health_check():
+    from agent.graph import get_checkpointer_backend_name
+    from agent.llm_provider import get_default_model
+
     db_ok = False
     vector_ok = False
 
@@ -404,6 +464,13 @@ async def health_check():
         timestamp=datetime.now(timezone.utc).isoformat(),
         db_ok=db_ok,
         vector_ok=vector_ok,
+        llm_provider=os.getenv("LLM_PROVIDER", "gemini").strip().lower(),
+        main_model=get_default_model(),
+        checkpointer_backend=get_checkpointer_backend_name(),
+        memory_mode=_memory_mode_label(),
+        legacy_memory_reads=_legacy_memory_reads_enabled(),
+        legacy_memory_writes=_legacy_memory_writes_enabled(),
+        query_analytics_enabled=_query_analytics_enabled(),
     )
 
 

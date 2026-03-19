@@ -37,10 +37,18 @@ Supervisor 是整个分析流程的"指挥官"，它做两件关键决策：
 from __future__ import annotations
 
 import logging
+import os
+import sqlite3
 from datetime import datetime, timezone
+from functools import lru_cache
 
 from agent.state import (
-    AgentState, PlanDict, increment_retry, get_retry_count, get_sql_result_dataframe
+    AgentState,
+    PlanDict,
+    WorkerStatusDict,
+    increment_retry,
+    get_retry_count,
+    get_sql_result_dataframe,
 )
 from agent.tracing import trace_node, TraceLogger
 from agent.materiality import (
@@ -55,6 +63,118 @@ log = logging.getLogger(__name__)
 MAX_SQL_RETRY  = 2
 MAX_RAG_RETRY  = 2
 MAX_TOTAL_REPLAN = 4   # 超过此数直接降级
+_DB_PATH = os.getenv("DB_PATH", os.path.join("data", "esg_data.db"))
+_INDUSTRY_TABLES: dict[str, str] = {
+    "new_energy": "esg_auto_metrics",
+    "bank": "esg_banking_metrics",
+    "power": "esg_power_metrics",
+}
+_TERMINAL_COVERAGE_ERRORS = {
+    "SQL_EMPTY",
+    "L1_MISSING",
+    "RAG_LOW_RECALL",
+    "RAG_LOW_RELEVANCE",
+}
+
+
+def _skipped_worker_status() -> WorkerStatusDict:
+    return WorkerStatusDict(
+        status="skipped",
+        error_type="",
+        error_detail="",
+        latency_ms=0,
+        retried=False,
+    )
+
+
+@lru_cache(maxsize=1)
+def _get_supported_companies() -> set[str]:
+    """加载结构化库当前覆盖的公司集合，用于识别 coverage gap。"""
+    supported: set[str] = set()
+    try:
+        conn = sqlite3.connect(_DB_PATH)
+    except Exception:
+        return supported
+
+    try:
+        for table_name in _INDUSTRY_TABLES.values():
+            try:
+                rows = conn.execute(
+                    f"""
+                    SELECT DISTINCT company_name
+                    FROM {table_name}
+                    WHERE company_name IS NOT NULL AND TRIM(company_name) <> ''
+                    """
+                ).fetchall()
+            except Exception:
+                continue
+            supported.update(str(row[0]).strip() for row in rows if row and row[0])
+    finally:
+        conn.close()
+
+    return supported
+
+
+def _classify_terminal_response(
+    state: AgentState,
+    error_type: str,
+) -> tuple[str, str] | None:
+    """
+    当失败原因是“证据确实不存在/当前库不覆盖”时，直接走可控终态响应，
+    不再继续 replan 空转到 generic degraded。
+    """
+    if error_type not in _TERMINAL_COVERAGE_ERRORS:
+        return None
+
+    entities = state.get("entities", {}) or {}
+    companies = [c for c in entities.get("companies", []) if c]
+    metrics = [m for m in entities.get("metrics", []) if m]
+    if not companies:
+        return None
+
+    worker_status = state.get("worker_status", {}) or {}
+    sql_attempted = (
+        worker_status.get("sql", {}).get("status") not in ("", None, "skipped")
+        or get_retry_count(state, "sql") > 0
+    )
+    rag_attempted = (
+        worker_status.get("rag", {}).get("status") not in ("", None, "skipped")
+        or get_retry_count(state, "rag") > 0
+    )
+    if not (sql_attempted and rag_attempted):
+        return None
+
+    sql_result = get_sql_result_dataframe(state)
+    sql_empty = sql_result is None or (hasattr(sql_result, "__len__") and len(sql_result) == 0)
+    rag_result = state.get("rag_result") if isinstance(state.get("rag_result"), dict) else {}
+    rag_chunks = rag_result.get("chunks", []) if isinstance(rag_result, dict) else []
+    rag_empty = len(rag_chunks) == 0
+    if not (sql_empty and rag_empty):
+        return None
+
+    supported_companies = set(entities.get("supported_companies", []))
+    unsupported_companies = set(entities.get("unsupported_companies", []))
+    if not (supported_companies or unsupported_companies):
+        supported_set = _get_supported_companies()
+        supported_companies = {c for c in companies if c in supported_set}
+        unsupported_companies = set(companies) - supported_companies
+
+    if unsupported_companies and not supported_companies:
+        company_text = "、".join(sorted(unsupported_companies))
+        return (
+            "coverage_gap",
+            f"当前项目数据集未覆盖公司：{company_text}；结构化库与报告检索均无可用证据。",
+        )
+
+    if supported_companies and metrics:
+        company_text = "、".join(sorted(supported_companies))
+        metric_text = "、".join(metrics[:3])
+        return (
+            "not_disclosed",
+            f"已覆盖公司 {company_text} 在当前年份/指标范围内缺少可用证据：{metric_text}。",
+        )
+
+    return None
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 数据源策略决策矩阵
@@ -91,10 +211,12 @@ def _decide_strategy(entities: dict, replan_error: dict | None = None) -> str:
     # Re-plan 场景：强制切换策略
     if replan_error:
         error_type = replan_error.get("type", "")
-        if error_type == "SQL_EMPTY":
+        if error_type in ("SQL_EMPTY", "L1_MISSING"):
             return "rag_only"       # SQL 拿不到数据，降级用 RAG
         if error_type == "RAG_LOW_RELEVANCE":
             return "sql_only"       # RAG 质量差，只用 SQL
+        if error_type == "RAG_LOW_RECALL":
+            return "parallel"       # 保留 SQL，并对 RAG 做召回兜底
 
     # 定性问答 → 纯 RAG
     if intent == "qa":
@@ -172,6 +294,8 @@ def _intersect_entities(
 def supervisor_node(state: AgentState) -> AgentState:
     trace_id = state.get("trace_id", "")
     log      = TraceLogger("supervisor", trace_id)
+    state["terminal_response_mode"] = ""
+    state["terminal_response_reason"] = ""
 
     entities       = state.get("entities", {})
     eval_d_errors  = state.get("eval_d_errors", [])
@@ -184,6 +308,17 @@ def supervisor_node(state: AgentState) -> AgentState:
         log.info(f"Re-plan 触发，错误：{eval_d_errors}")
         replan_error = eval_d_errors[0] if eval_d_errors else {}
         error_type   = replan_error.get("type", "")
+
+        terminal_response = _classify_terminal_response(state, error_type)
+        if terminal_response:
+            mode, reason = terminal_response
+            log.warning(f"识别为可控终态响应：{mode}，停止继续 Re-plan")
+            state["terminal_response_mode"] = mode
+            state["terminal_response_reason"] = reason
+            state["eval_d_errors"] = []
+            state["is_degraded"] = False
+            state["degraded_reason"] = ""
+            return state
 
         # 防止循环 Re-plan
         if len(replan_history) >= MAX_TOTAL_REPLAN:
@@ -202,6 +337,20 @@ def supervisor_node(state: AgentState) -> AgentState:
             entities  = {**entities, "years": new_years}
             reason    = f"SQL_EMPTY → 年份范围扩展至 {new_years}"
             state["retry_count"] = increment_retry(state, "sql")
+            log.info(reason)
+
+        elif error_type == "L1_MISSING":
+            # NOTE: L1 缺失优先走 RAG 召回兜底，减少直接 degraded。
+            new_years = _expand_years_for_replan(entities.get("years", []))
+            entities = {**entities, "years": new_years}
+            reason = f"L1_MISSING → 切换 RAG 召回兜底并放宽年份至 {new_years}"
+            state["retry_count"] = increment_retry(state, "rag")
+            log.info(reason)
+
+        elif error_type == "RAG_LOW_RECALL":
+            # NOTE: 召回不足时不直接放弃 RAG，进入 recall_fallback 扩召回。
+            reason = "RAG_LOW_RECALL → 启用 recall_fallback 扩召回策略"
+            state["retry_count"] = increment_retry(state, "rag")
             log.info(reason)
 
         elif error_type == "RAG_LOW_RELEVANCE":
@@ -237,8 +386,10 @@ def supervisor_node(state: AgentState) -> AgentState:
     # Re-plan 时强制使用调整后的策略
     if is_replan:
         error_type = (eval_d_errors[0].get("type", "") if eval_d_errors else "")
-        if error_type == "SQL_EMPTY":
+        if error_type in ("SQL_EMPTY", "L1_MISSING"):
             strategy = "rag_only"
+        elif error_type == "RAG_LOW_RECALL":
+            strategy = "parallel"
         elif error_type == "RAG_LOW_RELEVANCE":
             strategy = "sql_only"
 
@@ -249,6 +400,19 @@ def supervisor_node(state: AgentState) -> AgentState:
         workers = ["rag"]
     else:
         workers = ["sql", "rag"]
+
+    # Re-plan 切换数据源后，主动清理被禁用 worker 的旧结果，避免后续评估读到脏状态。
+    worker_status = dict(state.get("worker_status", {}))
+    if "sql" not in workers:
+        state["sql_result"] = None
+        state["sql_query_executed"] = ""
+        worker_status["sql"] = _skipped_worker_status()
+    if "rag" not in workers:
+        state["rag_result"] = None
+        state["scope_adjustment_chunks"] = []
+        worker_status["rag"] = _skipped_worker_status()
+    if worker_status:
+        state["worker_status"] = worker_status
 
     # ── 行业实质性议题注入 ───────────────────────────────────────────────────
     industry  = entities.get("industry", "")
@@ -279,14 +443,18 @@ def supervisor_node(state: AgentState) -> AgentState:
     )
 
     # ── 组装执行计划 ─────────────────────────────────────────────────────────
+    replan_type_for_rag = (eval_d_errors[0].get("type", "") if (is_replan and eval_d_errors) else "")
+    # NOTE: expose recall_fallback to RAG worker for L1_MISSING / LOW_RECALL cases.
+    rag_strategy = "standard"
+    if replan_type_for_rag == "RAG_LOW_RELEVANCE":
+        rag_strategy = "relaxed"
+    elif replan_type_for_rag in ("RAG_LOW_RECALL", "L1_MISSING"):
+        rag_strategy = "recall_fallback"
+
     plan = PlanDict(
         workers=workers,
         strategy=strategy,
-        rag_strategy=(
-            "relaxed"
-            if is_replan and (eval_d_errors or [{}])[0].get("type") == "RAG_LOW_RELEVANCE"
-            else "standard"
-        ),
+        rag_strategy=rag_strategy,
         replan_reason=(replan_history[-1] if replan_history else ""),
         schema_tables=(
             ["esg_universal_metrics"]
