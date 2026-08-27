@@ -1,0 +1,45 @@
+# Virtual environment
+.venv/
+.venv39/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Database (generated)
+*.db
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Data artifacts (large files, regeneratable)
+data/bm25_index.pkl
+data/chunk_metadata.json
+data/vector_store/
+vector_store/
+data/build_vectorstore.log
+data/ingestion.log
+
+# Evaluation / temporary outputs
+# 注意：不要全局忽略 *.md，否则 README 和 docs 无法纳入版本管理。
+test_chat.py
+outputs/
+eval_dataset.jsonl
+*.tmp.json
+*.tmp.jsonl
+
+.venv311/
+
+data/models/

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESG Agent | 智能分析终端</title>
+    <link href="style.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar / Header Area -->
+        <header class="chat-header glass-panel">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="icon-sparkle">
+                    <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z" fill="currentColor"/>
+                </svg>
+                <h1>ESG Agent</h1>
+            </div>
+            <div class="header-actions">
+                <a href="dashboard.html" class="nav-link" target="_blank">可观测看板</a>
+                <span class="status-badge" id="system-status">System Ready</span>
+            </div>
+        </header>
+
+        <!-- Main Chat Area -->
+        <main class="chat-main" id="chat-container">
+            <div class="message system-message welcome-msg">
+                <div class="avatar">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z" fill="currentColor"/>
+                    </svg>
+                </div>
+                <div class="message-content">
+                    <h3>欢迎使用 ESG 智能分析终端</h3>
+                    <p>我是一个基于 LangGraph 构建的多智能体系统，可解答关于银行业、新能源、电力行业重点上市公司的 ESG 表现，涵盖 2022-2024 年的数据与报告。</p>
+                    <div class="suggestion-chips">
+                        <button class="chip" onclick="setInput('比亚迪2022到2024年碳排放趋势如何？')">比亚迪近三年碳排放趋势</button>
+                        <button class="chip" onclick="setInput('工商银行近三年绿色贷款余额变化')">工商银行绿色贷款</button>
+                        <button class="chip" onclick="setInput('华能国际2024年清洁能源占比')">华能国际清洁能源</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Input Area -->
+        <footer class="chat-footer glass-panel">
+            <form id="chat-form" class="input-form">
+                <div class="input-wrapper">
+                    <textarea id="query-input" placeholder="输入你想查询的 ESG 问题..." rows="1" autofocus></textarea>
+                </div>
+                <button type="submit" id="send-btn" class="send-btn" disabled>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </form>
+        </footer>
+    </div>
+    
+    <!-- JavaScript Application -->
+    <script src="app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "mode": "bm25_only",
+  "pdf_count": 90,
+  "chunk_count": 25041,
+  "company_count": 30,
+  "industry_counts": {
+    "bank": 10450,
+    "new_energy": 8270,
+    "power": 6321
+  },
+  "failures": [],
+  "bm25_index": "/Users/nanyu/ntu/ESG-Anylist-agent-master/data/bm25_index.pkl",
+  "chunk_metadata": "/Users/nanyu/ntu/ESG-Anylist-agent-master/data/chunk_metadata.json"
+}

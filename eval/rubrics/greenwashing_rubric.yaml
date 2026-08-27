@@ -1,0 +1,42 @@
+name: greenwashing_rubric
+version: v1
+updated_at: 2026-08-09
+purpose: >
+  Identify potential claim-evidence mismatch in ESG reports. This rubric does
+  not determine whether a company is legally or factually greenwashing; it only
+  surfaces manual review points.
+principle: "strong ESG claim + weak nearby evidence = potential manual review point"
+strong_claim_examples:
+  - 绿色低碳
+  - 全面推进
+  - 碳中和
+  - 行业领先
+  - 世界一流
+  - 持续赋能绿色发展
+valid_evidence_signals:
+  - numeric_metric
+  - year_over_year_progress
+  - dated_target_with_progress
+  - third_party_assurance
+  - recognized_standard_reference
+  - concrete_project_or_scope
+risk_types:
+  vague_commitment:
+    description: 空泛承诺，缺少具体目标或行动。
+  target_without_progress:
+    description: 有长期目标但缺少年度进展。
+  supply_chain_claim_weak_evidence:
+    description: 供应链绿色管理表述缺少覆盖率、审核数量等证据。
+  safety_claim_weak_evidence:
+    description: 安全/责任表述缺少事故率、培训覆盖等量化证据。
+  selective_disclosure:
+    description: 只披露有利信息，关键不利指标缺失；v1 仅做提示，需人工复核。
+output_contract:
+  required_fields:
+    - risk_count
+    - risks
+    - summary
+    - method
+safety_boundary:
+  do_not_say: "该公司构成绿漂"
+  say_instead: "该表述属于潜在 claim-evidence mismatch，建议人工复核"

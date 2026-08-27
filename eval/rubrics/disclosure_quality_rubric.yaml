@@ -1,0 +1,63 @@
+name: disclosure_quality_rubric
+version: v1
+updated_at: 2026-08-09
+purpose: >
+  Evaluate whether ESG report disclosures are complete, continuous, comparable,
+  verifiable and specific. This rubric mirrors agent/disclosure_quality.py and
+  is kept here for interview/evaluation transparency.
+score_range: [0, 100]
+dimensions:
+  completeness:
+    weight: 30
+    description: 是否披露用户问题需要的核心公司、年份、指标。
+    positive_signals:
+      - core_metric_present
+      - company_year_metric_covered
+    negative_signals:
+      - missing_core_metric
+      - large_missing_ratio
+  continuity:
+    weight: 20
+    description: 是否跨年份连续披露，能否支持趋势分析。
+    positive_signals:
+      - multi_year_series
+      - year_over_year_progress
+    negative_signals:
+      - one_year_only
+      - broken_time_series
+  comparability:
+    weight: 20
+    description: 指标口径、单位和统计边界是否可比。
+    positive_signals:
+      - consistent_unit
+      - consistent_scope
+    negative_signals:
+      - mixed_scope
+      - incomparable_industry_context
+  verifiability:
+    weight: 20
+    description: 是否有 SQL、PDF 原文、页码、鉴证等可追溯证据。
+    positive_signals:
+      - sql_evidence
+      - rag_citation
+      - assurance_or_standard_reference
+    negative_signals:
+      - no_source
+      - vague_text_only
+  specificity:
+    weight: 10
+    description: 是否具体到数字、年份、目标和行动，而非泛泛表述。
+    positive_signals:
+      - numeric_value
+      - dated_target
+      - concrete_action
+    negative_signals:
+      - slogan_only
+      - no_timeline
+output_contract:
+  required_fields:
+    - score
+    - band
+    - components
+    - risk_flags
+    - notes

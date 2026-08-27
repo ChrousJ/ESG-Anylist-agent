@@ -1,0 +1,2 @@
+# Lightweight dependencies for deterministic tests and CI.
+typing_extensions>=4.8,<5

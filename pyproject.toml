@@ -1,0 +1,12 @@
+[project]
+name = "esg-insight-agent"
+version = "1.1.0"
+description = "Evaluable LangGraph agent for ESG report analysis with SQL/RAG evidence and dual evaluators"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = {text = "For portfolio and educational use; verify bundled report licenses before redistribution."}
+authors = [{name = "ESG-Insight Agent Contributor"}]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
