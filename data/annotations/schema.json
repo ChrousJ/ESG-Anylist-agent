@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Verified ESG Metric Annotation",
+  "type": "object",
+  "required": [
+    "annotation_id",
+    "company_name",
+    "year",
+    "metric_key",
+    "normalized_value",
+    "normalized_unit",
+    "raw_value",
+    "raw_unit",
+    "source_file",
+    "pdf_page",
+    "excerpt",
+    "organizational_boundary",
+    "reporting_basis",
+    "quality",
+    "confidence",
+    "review_status",
+    "needs_second_reviewer"
+  ],
+  "properties": {
+    "annotation_id": {
+      "type": "string"
+    },
+    "company_name": {
+      "type": "string"
+    },
+    "year": {
+      "type": "integer",
+      "minimum": 2000,
+      "maximum": 2100
+    },
+    "industry": {
+      "type": "string"
+    },
+    "metric_key": {
+      "enum": [
+        "scope_1_emissions",
+        "scope_2_emissions",
+        "scope_3_emissions",
+        "green_finance_balance"
+      ]
+    },
+    "normalized_value": {
+      "type": "number",
+      "minimum": 0
+    },
+    "normalized_unit": {
+      "enum": [
+        "tCO2e",
+        "亿元"
+      ]
+    },
+    "raw_value": {
+      "type": "string"
+    },
+    "raw_unit": {
+      "type": "string"
+    },
+    "source_file": {
+      "type": "string"
+    },
+    "pdf_page": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "excerpt": {
+      "type": "string",
+      "minLength": 8
+    },
+    "organizational_boundary": {
+      "type": "string"
+    },
+    "reporting_basis": {
+      "type": "string"
+    },
+    "quality": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "review_status": {
+      "type": "string"
+    },
+    "needs_second_reviewer": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

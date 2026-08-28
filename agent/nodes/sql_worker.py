@@ -251,6 +251,63 @@ def _generate_sql_deterministic(entities: dict) -> str:
     )
 
 
+
+_PROVENANCE_FIELDS = {
+    "scope_1_emissions": ("esg_universal_metrics", "raw_scope_1"),
+    "scope_2_emissions": ("esg_universal_metrics", "raw_scope_2"),
+    "scope_3_emissions": ("esg_auto_metrics", "raw_scope_3"),
+    "green_finance_balance": ("esg_banking_metrics", "raw_green_finance"),
+}
+
+
+def _build_sql_provenance_sources(df: pd.DataFrame, entities: dict) -> list[dict]:
+    """Recover report/page provenance for returned structured metric values."""
+    if df is None or df.empty or not {"company_name", "year"}.issubset(df.columns):
+        return []
+    requested = [m for m in entities.get("metrics", []) if m in _PROVENANCE_FIELDS]
+    if not requested:
+        requested = [m for m in _PROVENANCE_FIELDS if m in df.columns]
+    grouped: dict[tuple[str, int, str, str], dict] = {}
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        for _, row in df.iterrows():
+            company = str(row.get("company_name", ""))
+            try:
+                year = int(row.get("year"))
+            except (TypeError, ValueError):
+                continue
+            for metric_key in requested:
+                if metric_key not in df.columns or pd.isna(row.get(metric_key)):
+                    continue
+                table, raw_col = _PROVENANCE_FIELDS[metric_key]
+                record = conn.execute(
+                    f'SELECT "{raw_col}", source_file, data_quality FROM {table} WHERE company_name=? AND year=?',
+                    (company, year),
+                ).fetchone()
+                if not record or not record[0]:
+                    continue
+                try:
+                    raw = json.loads(record[0])
+                except Exception:
+                    continue
+                source_file = str(raw.get("source_file") or record[1] or "")
+                page = str(raw.get("page", ""))
+                key = (company, year, source_file, page)
+                source = grouped.setdefault(key, {
+                    "type": "sql", "company": company, "year": year, "file": source_file,
+                    "page": page, "metrics": [], "values": {}, "excerpt": "",
+                    "organizational_boundary": raw.get("organizational_boundary", ""),
+                    "reporting_basis": raw.get("reporting_basis", ""),
+                })
+                source["metrics"].append(metric_key)
+                source["values"][metric_key] = row.get(metric_key)
+                excerpt = str(raw.get("excerpt", ""))
+                if excerpt and excerpt not in source["excerpt"]:
+                    source["excerpt"] = (source["excerpt"] + " " + excerpt).strip()
+        return list(grouped.values())
+    finally:
+        conn.close()
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 主节点函数
 # ══════════════════════════════════════════════════════════════════════════════
@@ -282,13 +339,14 @@ def sql_worker_node(state: AgentState) -> AgentState:
 
     # ── Step 1：生成 SQL ──────────────────────────────────────────────────────
     offline_mode = os.getenv("OFFLINE_DETERMINISTIC_MODE", "false").strip().lower() in {"1", "true", "yes", "y"}
-    if offline_mode:
+    deterministic_sql_only = os.getenv("DETERMINISTIC_SQL_ONLY", "false").strip().lower() in {"1", "true", "yes", "y"}
+    if offline_mode or deterministic_sql_only:
         fallback_sql = _generate_sql_deterministic(entities)
         sql_gen_result = {
             "status": "success" if fallback_sql else "failed",
             "result": fallback_sql,
             "error_type": "OFFLINE_NO_DETERMINISTIC_SQL" if not fallback_sql else "",
-            "error_detail": "External LLM disabled in offline deterministic mode",
+            "error_detail": "External Text2SQL disabled by deterministic SQL mode",
             "latency_ms": 0,
         }
     else:
@@ -407,6 +465,7 @@ def sql_worker_node(state: AgentState) -> AgentState:
     return {
         "sql_result": serialize_sql_result(df),
         "sql_query_executed": generated_sql,
+        "sql_provenance_sources": _build_sql_provenance_sources(df, entities),
         "worker_status": {
             "sql": WorkerStatusDict(
                 status="success",

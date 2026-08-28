@@ -1,11 +1,11 @@
 {
-  "database": "/Users/nanyu/ntu/ESG-Anylist-agent-master/data/esg_data.db",
+  "database": "/Users/nanyu/dissertation/ESG-Anylist-agent-master/data/esg_data.db",
   "report_rows": 90,
   "companies": 30,
-  "verified_metric_values": 19,
+  "verified_metric_values": 56,
   "universal_rows": 90,
   "bank_rows": 30,
   "auto_rows": 30,
   "power_rows": 30,
-  "missing_log_rows": 1481
+  "missing_log_rows": 1444
 }

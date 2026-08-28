@@ -256,6 +256,31 @@ def _evidence_target_coverage(result: dict[str, Any], case: dict[str, Any]) -> d
     }
 
 
+
+def _score_gold_evidence(result: dict[str, Any], case: dict[str, Any]) -> dict[str, Any]:
+    """Score whether packaged RAG citations hit independently specified source pages."""
+    gold = case.get("gold_evidence", []) or []
+    if not gold:
+        return {"total": 0, "matched": 0, "recall": None, "details": []}
+    sources = result.get("sources_preview", []) or []
+    details = []
+    matched = 0
+    for item in gold:
+        expected_file = str(item.get("source_file", ""))
+        expected_page = str(item.get("pdf_page", ""))
+        expected_company = str(item.get("company", ""))
+        hits = []
+        for source in sources:
+            file_ok = not expected_file or str(source.get("file", "")) == expected_file
+            page_ok = not expected_page or str(source.get("page", "")) == expected_page
+            company_ok = not expected_company or str(source.get("company", "")) == expected_company
+            if file_ok and page_ok and company_ok:
+                hits.append({"file": source.get("file", ""), "page": source.get("page", ""), "company": source.get("company", "")})
+        ok = bool(hits)
+        matched += int(ok)
+        details.append({**item, "matched": ok, "hits": hits})
+    return {"total": len(gold), "matched": matched, "recall": round(matched / len(gold) * 100, 1), "details": details}
+
 def _annotate_expected_behavior(result: dict[str, Any], case: dict[str, Any]) -> dict[str, Any]:
     answer = result.get("analysis_full", "") or result.get("analysis_preview", "") or ""
     category = case.get("category", "")
@@ -271,6 +296,8 @@ def _annotate_expected_behavior(result: dict[str, Any], case: dict[str, Any]) ->
     result["strict_success"] = result.get("status") == "success"
     result["evidence_requirement_met"] = (not evidence_required) or bool(result.get("has_any_evidence"))
     result["no_data_safe"] = None
+    result["partial_missing_safe"] = None
+    result["comparability_caveat_met"] = None
     if category == "missing_degradation":
         lower = answer.lower()
         boundary_text = (
@@ -280,6 +307,20 @@ def _annotate_expected_behavior(result: dict[str, Any], case: dict[str, Any]) ->
         # A safe no-data response must not package evidence from unrelated entities.
         no_evidence_leak = not result.get("has_any_evidence")
         result["no_data_safe"] = result.get("status") == "success" and boundary_text and no_evidence_leak
+    if category == "partial_missing":
+        lower = answer.lower()
+        missing_markers = ("未披露", "未核实", "未找到", "缺失", "不可得", "仅披露", "没有可用", "当前结构化", "not available", "no structured data", "structured data is not available", "无法分别", "无法拆分", "不能分别", "不可拆分")
+        semantic_missing = bool(re.search(
+            r"未.{0,12}(?:披露|提供|找到|核实)|(?:无法|不能|不可).{0,8}(?:拆分|分别)|仅.{0,8}(?:合并|总量)",
+            answer, flags=re.IGNORECASE,
+        ))
+        result["partial_missing_safe"] = result.get("status") == "success" and (
+            any(marker in lower for marker in missing_markers) or semantic_missing
+        )
+    if case.get("comparability_warning_expected"):
+        lower = answer.lower()
+        caveat_markers = ("口径", "统计边界", "组织边界", "统计范围", "不可直接比较", "可比性", "不完全可比")
+        result["comparability_caveat_met"] = any(marker in lower for marker in caveat_markers)
     result["clarify_success"] = None
     if category == "clarify":
         if expected_class == "knowledge":
@@ -295,6 +336,7 @@ def _annotate_expected_behavior(result: dict[str, Any], case: dict[str, Any]) ->
             clarify_markers = ("请问", "请补充", "需要了解", "想分析", "您想了解", "provide", "clarify")
             result["clarify_success"] = result.get("status") == "success" and any(m in answer.lower() for m in clarify_markers)
     result["golden_fact_score"] = _score_golden_facts(result, case)
+    result["gold_evidence_score"] = _score_gold_evidence(result, case)
     if evidence_required:
         result["target_coverage"] = _evidence_target_coverage(result, case)
         result["numeric_support"] = _packaged_numeric_support(answer, result.get("judge_evidence") or {})
@@ -324,10 +366,17 @@ def _annotate_expected_behavior(result: dict[str, Any], case: dict[str, Any]) ->
         case_pass = case_pass and bool(result.get("no_data_safe"))
     if category == "clarify":
         case_pass = case_pass and bool(result.get("clarify_success"))
+    if category == "partial_missing":
+        case_pass = case_pass and bool(result.get("partial_missing_safe"))
+    if case.get("comparability_warning_expected"):
+        case_pass = case_pass and bool(result.get("comparability_caveat_met"))
     if golden.get("total", 0):
         case_pass = case_pass and golden.get("accuracy") == 100.0
     if isinstance(target_rate, (int, float)):
         case_pass = case_pass and target_rate == 100.0
+    gold_evidence = result.get("gold_evidence_score") or {}
+    if case.get("require_gold_evidence") and gold_evidence.get("total", 0):
+        case_pass = case_pass and gold_evidence.get("recall") == 100.0
     result["case_pass"] = bool(case_pass)
     return result
 
@@ -539,7 +588,7 @@ def _judge_answer(
 # LangGraph Agent Runner
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
+def _run_langgraph_agent(query: str, case_id: str, ablation_profile: str = "full") -> dict[str, Any]:
     """
     Run the full LangGraph ESG Agent on a query.
     Returns standardized result dict.
@@ -567,7 +616,7 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
             trace_id=trace_id,
             request_id=request_id,
         )
-        graph = get_graph()
+        graph = get_graph(ablation_profile)
         config = {"configurable": {"thread_id": f"eval-{case_id}"}}
         final_state = graph.invoke(init_state, config=config)
         latency_ms = int((time.perf_counter() - t_start) * 1000)
@@ -623,7 +672,8 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
 
         return {
             "case_id": case_id,
-            "agent": "langgraph",
+            "agent": f"langgraph_{ablation_profile}",
+            "ablation_profile": ablation_profile,
             "status": status,
             "latency_ms": latency_ms,
             "analysis_length": len(analysis),
@@ -674,7 +724,8 @@ def _run_langgraph_agent(query: str, case_id: str) -> dict[str, Any]:
         log.error(f"[{case_id}] LangGraph agent failed: {e}")
         return {
             "case_id": case_id,
-            "agent": "langgraph",
+            "agent": f"langgraph_{ablation_profile}",
+            "ablation_profile": ablation_profile,
             "status": "crashed",
             "latency_ms": latency_ms,
             "analysis_length": 0,
@@ -910,6 +961,8 @@ def _compute_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
     evidence_required_rows = [r for r in results if r.get("expected_evidence_required")]
     no_data_rows = [r for r in results if r.get("no_data_safe") is not None]
     clarify_rows = [r for r in results if r.get("clarify_success") is not None]
+    partial_missing_rows = [r for r in results if r.get("partial_missing_safe") is not None]
+    comparability_rows = [r for r in results if r.get("comparability_caveat_met") is not None]
     target_rates = [
         r.get("target_coverage", {}).get("rate") for r in results
         if isinstance(r.get("target_coverage", {}).get("rate"), (int, float))
@@ -921,6 +974,8 @@ def _compute_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
 
     golden_total = sum(int((r.get("golden_fact_score") or {}).get("total", 0)) for r in results)
     golden_matched = sum(int((r.get("golden_fact_score") or {}).get("matched", 0)) for r in results)
+    gold_evidence_total = sum(int((r.get("gold_evidence_score") or {}).get("total", 0)) for r in results)
+    gold_evidence_matched = sum(int((r.get("gold_evidence_score") or {}).get("matched", 0)) for r in results)
 
     latencies_sorted = sorted(latencies)
     p50_idx = max(0, int(math.ceil(0.50 * total)) - 1)
@@ -942,11 +997,16 @@ def _compute_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
         "evidence_required_coverage_rate": round(sum(1 for r in evidence_required_rows if r.get("evidence_requirement_met")) / len(evidence_required_rows) * 100, 1) if evidence_required_rows else 0,
         "no_data_safe_response_rate": round(sum(1 for r in no_data_rows if r.get("no_data_safe")) / len(no_data_rows) * 100, 1) if no_data_rows else 0,
         "clarify_success_rate": round(sum(1 for r in clarify_rows if r.get("clarify_success")) / len(clarify_rows) * 100, 1) if clarify_rows else 0,
+        "partial_missing_safe_rate": round(sum(1 for r in partial_missing_rows if r.get("partial_missing_safe")) / len(partial_missing_rows) * 100, 1) if partial_missing_rows else 0,
+        "comparability_caveat_rate": round(sum(1 for r in comparability_rows if r.get("comparability_caveat_met")) / len(comparability_rows) * 100, 1) if comparability_rows else 0,
         "avg_target_coverage_rate": round(statistics.mean(target_rates), 1) if target_rates else 0,
         "avg_packaged_numeric_support_rate": round(statistics.mean(numeric_rates), 1) if numeric_rates else 0,
         "golden_fact_total": golden_total,
         "golden_fact_matched": golden_matched,
         "golden_fact_accuracy": round(golden_matched / golden_total * 100, 1) if golden_total else 0,
+        "gold_evidence_total": gold_evidence_total,
+        "gold_evidence_matched": gold_evidence_matched,
+        "gold_evidence_recall": round(gold_evidence_matched / gold_evidence_total * 100, 1) if gold_evidence_total else 0,
         "rescued": rescued,
         "rescue_rate": round(rescued / total * 100, 1) if total else 0,
         "crashed": sum(1 for r in results if r["status"] == "crashed"),
@@ -1303,6 +1363,7 @@ async def _run_all(
     run_baseline: bool = True,
     delay_between: float = 2.0,
     judge_cfg: JudgeConfig | None = None,
+    ablation_profile: str = "full",
 ) -> tuple[list[dict], list[dict]]:
     """Run all eval cases with rate limiting."""
     sem = asyncio.Semaphore(concurrency)
@@ -1315,7 +1376,7 @@ async def _run_all(
         async with sem:
             log.info(f"[{idx}/{total}] LangGraph: {case['id']} - {case['query'][:40]}")
             result = await loop.run_in_executor(
-                None, _run_langgraph_agent, case["query"], case["id"]
+                None, _run_langgraph_agent, case["query"], case["id"], ablation_profile
             )
             result = _annotate_expected_behavior(result, case)
             if judge_cfg and judge_cfg.get("enabled") and result.get("analysis_full"):
@@ -1438,6 +1499,10 @@ def main() -> None:
         "--max-cases", type=int, default=0,
         help="Max number of cases to run (0 = all)",
     )
+    parser.add_argument(
+        "--ablation-profile", choices=["full", "no_evaluators", "eval_d_only", "eval_o_only"],
+        default="full", help="Controlled LangGraph quality-gate profile",
+    )
     args = parser.parse_args()
 
     # Apply stability knobs via env
@@ -1488,6 +1553,7 @@ def main() -> None:
             run_baseline=not args.skip_baseline,
             delay_between=args.delay,
             judge_cfg=judge_cfg,
+            ablation_profile=args.ablation_profile,
         )
     )
 
@@ -1535,6 +1601,7 @@ def main() -> None:
                 "judge_enabled": judge_cfg["enabled"],
                 "judge_model": judge_cfg["model"],
                 "judge_base_url": judge_cfg["base_url"],
+                "ablation_profile": args.ablation_profile,
             },
             "langgraph": {
                 "metrics": lg_metrics,

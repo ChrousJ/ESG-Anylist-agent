@@ -130,6 +130,23 @@ class EvalMetricsTest(unittest.TestCase):
         self.assertTrue(annotated["clarify_success"])
         self.assertTrue(annotated["case_pass"])
 
+    def test_partial_missing_accepts_non_contiguous_disclosure_wording(self):
+        case = {
+            "id": "M", "category": "partial_missing", "expected_class": "complex",
+            "expected_evidence": True,
+            "expected_entities": {"companies": ["华友钴业"], "years": [2022], "metrics": ["scope_1_emissions", "scope_2_emissions"]},
+        }
+        result = {
+            "status": "success", "query_class": "complex", "has_any_evidence": True,
+            "analysis_full": "范围一和范围二的单独排放量数据未在证据中披露，仅提供合并总量。",
+            "sql_result_preview": {},
+            "sources_preview": [{"company": "华友钴业", "year": 2022}],
+            "judge_evidence": {},
+        }
+        scored = _annotate_expected_behavior(result, case)
+        self.assertTrue(scored["partial_missing_safe"])
+        self.assertTrue(scored["case_pass"])
+
 
 if __name__ == "__main__":
     unittest.main()

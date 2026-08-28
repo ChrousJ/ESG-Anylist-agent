@@ -815,6 +815,25 @@ def synthesizer_node(state: AgentState) -> AgentState:
         )
         log.info(f"fix mode: retry={retry_count}, errors={[e['type'] for e in compact_errors]}")
 
+    partial_missing_instruction = ""
+    sql_df_for_prompt = get_sql_result_dataframe(state)
+    requested_metric_columns = [m for m in metrics if sql_df_for_prompt is not None and m in sql_df_for_prompt.columns]
+    no_separate_structured_values = (
+        len(metrics) >= 2
+        and (
+            sql_df_for_prompt is None
+            or getattr(sql_df_for_prompt, "empty", True)
+            or not requested_metric_columns
+            or all(sql_df_for_prompt[m].isna().all() for m in requested_metric_columns)
+        )
+    )
+    if no_separate_structured_values:
+        partial_missing_instruction = (
+            "\n\n## Partial-Missing Safety Requirement\n"
+            "- If the evidence provides only a combined total for multiple requested metrics, explicitly state that separate values are unavailable and cannot be split.\n"
+            "- Do not substitute the combined total for any individual metric and do not infer a split."
+        )
+
     user_prompt = _USER_PROMPT_TEMPLATE.format(
         query=query,
         companies=companies,
@@ -823,7 +842,7 @@ def synthesizer_node(state: AgentState) -> AgentState:
         compare_dimension=compare_dimension,
         materiality_context=materiality_context,
         synthesis_context=synthesis_context,
-    ) + fix_instruction
+    ) + partial_missing_instruction + fix_instruction
 
     log.info(f"寮€濮嬬敓鎴愬洓灞傚垎鏋愭姤鍛婏紝context={len(synthesis_context)}瀛楃")
 
@@ -844,6 +863,7 @@ def synthesizer_node(state: AgentState) -> AgentState:
         ]
         state["chart_spec"] = None
         sources = list(state.get("sources", []))
+        sources.extend(state.get("sql_provenance_sources", []) or [])
         for chunk in rag_result.get("chunks", [])[:5]:
             sources.append({
                 "type": "rag",
@@ -982,6 +1002,16 @@ def synthesizer_node(state: AgentState) -> AgentState:
                 state["synth_fallback_used"] = True
                 state["key_findings"] = []
                 state["chart_spec"] = None
+                sources = list(state.get("sources", []))
+                sources.extend(state.get("sql_provenance_sources", []) or [])
+                for chunk in rag_result.get("chunks", [])[:5]:
+                    sources.append({
+                        "type": "rag", "company": chunk.get("company_name", ""),
+                        "year": chunk.get("year", ""), "page": chunk.get("page_num", ""),
+                        "file": chunk.get("source_file", ""), "score": chunk.get("rerank_score", 0),
+                        "excerpt": chunk.get("text", "")[:80],
+                    })
+                state["sources"] = sources
                 return state
 
     # 鈹€鈹€ 瑙ｆ瀽 JSON 灏鹃儴锛坘ey_findings + chart_spec锛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -1002,6 +1032,7 @@ def synthesizer_node(state: AgentState) -> AgentState:
 
     # 鈹€鈹€ 鏋勫缓鏉ユ簮婧簮鍒楄〃 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     sources: list[dict] = list(state.get("sources", []))
+    sources.extend(state.get("sql_provenance_sources", []) or [])
     rag_result = state.get("rag_result") or {}
     for chunk in rag_result.get("chunks", [])[:5]:
         sources.append({

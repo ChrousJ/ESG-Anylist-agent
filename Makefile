@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: install dev test eval eval-offline dataset seed-db bm25-index health doctor doctor-offline doctor-source quality vector-index
+.PHONY: install dev test eval eval-offline dataset seed-db bm25-index health doctor doctor-offline doctor-source quality vector-index validate-annotations gold-dataset ablation-offline
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -50,3 +50,12 @@ eval-offline:
 
 vector-index:
 	$(PYTHON) scripts/build_chroma_from_chunks.py
+
+validate-annotations:
+	$(PYTHON) scripts/validate_metric_annotations.py
+
+gold-dataset:
+	$(PYTHON) scripts/generate_gold_eval_dataset.py
+
+ablation-offline:
+	$(PYTHON) scripts/run_ablation_suite.py --mode offline --include-baseline

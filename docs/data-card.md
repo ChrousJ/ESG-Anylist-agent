@@ -98,3 +98,30 @@ api/main.py
 - 在前端增加“当前问题是否在覆盖范围内”的提示；
 - 将 Data Card 接入 Evaluator-D，使数据边界直接影响 re-plan / degraded response；
 - 区分“企业未披露”和“系统未采集”两类缺失原因。
+
+---
+
+## 8. Dissertation structured subset v1（2026-08-27）
+
+The auditable annotation source is `data/annotations/verified_metrics_v1.jsonl`.
+
+| Item | Count |
+|---|---:|
+| Primary-source metric records | 56 |
+| Automotive/new-energy Scope 1 records | 26 |
+| Automotive/new-energy Scope 2 records | 26 |
+| Other retained seed records | 4 |
+| Companies with Scope 1/2 facts | 10 |
+| PDF-page validation errors | 0 |
+| Records pending second review | 56 |
+
+Important boundary cases:
+
+- CATL's three-year series uses the battery-production-base boundary and must not be mixed with its separately disclosed 2024 consolidated-group total.
+- Changan's series is explicitly the autonomous-operation boundary.
+- Gotion's 2022 and 2024 organizational boundaries differ materially.
+- Huayou's 2024 total includes newly commissioned factories and is not directly comparable with 2023.
+- EVE's source table does not provide 2022 Scope 1/2 values.
+- Huayou's 2022 report provides a combined Scope 1+2 total, which is not split or guessed.
+
+The current review status is machine-assisted primary-source transcription with automated PDF-page verification. A second reviewer template and guide are provided under `data/annotations/`. Until that review is complete, external claims must use “auditable primary-source regression subset”, not “independently human-labelled benchmark”.

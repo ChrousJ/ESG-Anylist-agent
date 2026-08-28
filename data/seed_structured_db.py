@@ -95,51 +95,54 @@ def metric(value: float, raw_value: str, unit: str, page: int, excerpt: str,
     }
 
 
-# Values below are transcribed from bundled reports/chunks and are deliberately limited
-# to metrics needed by stable smoke/demo cases.
-VERIFIED: dict[tuple[str, int], dict[str, dict[str, Any]]] = {
-    ("比亚迪", 2022): {
-        "scope_1_emissions": metric(550932.0, "550,932", "吨二氧化碳当量", 61, "2022年范围一温室气体排放量550,932吨"),
-        "scope_2_emissions": metric(7511038.0, "7,511,038", "吨二氧化碳当量", 61, "2022年范围二温室气体排放量7,511,038吨"),
-    },
-    ("比亚迪", 2023): {
-        "scope_1_emissions": metric(931916.0, "931,916.00", "吨二氧化碳当量", 127, "主要绩效指标摘要列示2023年范围1排放931,916.00吨"),
-        "scope_2_emissions": metric(11409539.0, "11,409,539.00", "吨二氧化碳当量", 127, "主要绩效指标摘要列示2023年范围2排放11,409,539.00吨"),
-    },
-    ("比亚迪", 2024): {
-        "scope_1_emissions": metric(1539251.46, "1,539,251.46", "吨二氧化碳当量", 127, "2024年范围1温室气体排放量1,539,251.46吨"),
-        "scope_2_emissions": metric(8562574.74, "8,562,574.74", "吨二氧化碳当量", 127, "2024年范围2温室气体排放量8,562,574.74吨"),
-        "scope_3_emissions": metric(3166958.18, "3,166,958.18", "吨二氧化碳当量", 127, "范围3温室气体排放量（与燃料和能源相关的活动）3,166,958.18吨"),
-    },
-    ("长城汽车", 2022): {
-        "scope_1_emissions": metric(140976.54, "140,976.54", "tCO2e", 95, "2023报告绩效表回溯列示2022年范围一140,976.54 tCO2e"),
-        "scope_2_emissions": metric(917443.51, "917,443.51", "tCO2e", 95, "2023报告绩效表回溯列示2022年范围二917,443.51 tCO2e"),
-    },
-    ("长城汽车", 2023): {
-        "scope_1_emissions": metric(153244.61, "153,244.61", "tCO2e", 95, "2023年范围一直接温室气体排放量153,244.61 tCO2e"),
-        "scope_2_emissions": metric(1017628.02, "1,017,628.02", "tCO2e", 95, "2023年范围二间接温室气体排放量1,017,628.02 tCO2e"),
-    },
-    ("长城汽车", 2024): {
-        "scope_1_emissions": metric(152033.50, "152,033.50", "tCO2e", 97, "2024年范围一直接温室气体排放量152,033.50 tCO2e"),
-        "scope_2_emissions": metric(997331.85, "997,331.85", "tCO2e", 97, "2024年范围二间接温室气体排放量997,331.85 tCO2e"),
-    },
-    ("宁德时代", 2023): {
-        "scope_1_emissions": metric(813335.12, "813,335.12", "吨二氧化碳当量", 95, "2023年范围一温室气体排放总量813,335.12吨"),
-    },
-    ("上汽集团", 2023): {
-        "scope_1_emissions": metric(483000.0, "48.3", "万吨二氧化碳当量", 43, "2023年直接温室气体排放量48.3万吨二氧化碳当量", quality="unit_converted"),
-        "scope_2_emissions": metric(1547000.0, "154.7", "万吨二氧化碳当量", 43, "2023年间接温室气体排放量154.7万吨二氧化碳当量", quality="unit_converted"),
-    },
-    ("工商银行", 2022): {
-        "green_finance_balance": metric(39784.58, "39,784.58", "亿元", 10, "2022年绿色贷款余额39,784.58亿元"),
-    },
-    ("工商银行", 2023): {
-        "green_finance_balance": metric(54000.0, "近5.4", "万亿元", 58, "金融监管总局口径绿色贷款余额近5.4万亿元", quality="reported_approximation", confidence=0.95, warnings=["报告使用‘近’字样"]),
-    },
-    ("工商银行", 2024): {
-        "green_finance_balance": metric(60000.0, "突破6", "万亿元", 72, "金融监管总局口径绿色贷款余额突破6万亿元", quality="reported_lower_bound", confidence=0.90, warnings=["结构化值为披露下界，实际值高于6万亿元"]),
-    },
-}
+# The primary-source annotation file is the authoritative structured seed.
+DEFAULT_ANNOTATION_PATH = DEFAULT_DATA_DIR / "annotations/verified_metrics_v1.jsonl"
+
+
+def load_verified_annotations(path: Path = DEFAULT_ANNOTATION_PATH) -> dict[tuple[str, int], dict[str, dict[str, Any]]]:
+    """Load one-record-per-metric annotations into the database seed mapping."""
+    verified: dict[tuple[str, int], dict[str, dict[str, Any]]] = {}
+    if not path.exists():
+        raise FileNotFoundError(f"Verified annotation file not found: {path}")
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        required = {
+            "company_name", "year", "metric_key", "normalized_value",
+            "raw_value", "raw_unit", "pdf_page", "excerpt", "source_file",
+            "quality", "confidence",
+        }
+        missing = sorted(required - record.keys())
+        if missing:
+            raise ValueError(f"{path}:{lineno}: missing fields {missing}")
+        key = (str(record["company_name"]), int(record["year"]))
+        metric_key = str(record["metric_key"])
+        metrics = verified.setdefault(key, {})
+        if metric_key in metrics:
+            raise ValueError(f"{path}:{lineno}: duplicate annotation {key}/{metric_key}")
+        metrics[metric_key] = {
+            "value": float(record["normalized_value"]),
+            "raw": {
+                "raw_value": str(record["raw_value"]),
+                "raw_unit": str(record["raw_unit"]),
+                "normalized_unit": str(record.get("normalized_unit", "")),
+                "page": str(record["pdf_page"]),
+                "excerpt": str(record["excerpt"]),
+                "source_file": str(record["source_file"]),
+                "organizational_boundary": str(record.get("organizational_boundary", "")),
+                "reporting_basis": str(record.get("reporting_basis", "")),
+                "review_status": str(record.get("review_status", "")),
+                "needs_second_reviewer": bool(record.get("needs_second_reviewer", True)),
+            },
+            "quality": str(record["quality"]),
+            "confidence": float(record["confidence"]),
+            "warnings": list(record.get("warnings", [])),
+        }
+    return verified
+
+
+VERIFIED = load_verified_annotations()
 
 RAW_COLUMNS = {
     "scope_1_emissions": "raw_scope_1", "scope_2_emissions": "raw_scope_2",

@@ -1,0 +1,682 @@
+{
+  "audit": "machine_second_pass_v1",
+  "date": "2026-08-28",
+  "records": 56,
+  "accepted": 56,
+  "review_required": 0,
+  "human_review_completed": false,
+  "results": [
+    {
+      "annotation_id": "比亚迪-2022-scope_1_emissions",
+      "source_file": "比亚迪2024年ESG报告.pdf",
+      "pdf_page": 127,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "比亚迪-2022-scope_2_emissions",
+      "source_file": "比亚迪2024年ESG报告.pdf",
+      "pdf_page": 127,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "比亚迪-2023-scope_1_emissions",
+      "source_file": "比亚迪2024年ESG报告.pdf",
+      "pdf_page": 127,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "比亚迪-2023-scope_2_emissions",
+      "source_file": "比亚迪2024年ESG报告.pdf",
+      "pdf_page": 127,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "比亚迪-2024-scope_1_emissions",
+      "source_file": "比亚迪2024年ESG报告.pdf",
+      "pdf_page": 127,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "比亚迪-2024-scope_2_emissions",
+      "source_file": "比亚迪2024年ESG报告.pdf",
+      "pdf_page": 127,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长城汽车-2022-scope_1_emissions",
+      "source_file": "长城汽车2023年ESG报告.pdf",
+      "pdf_page": 95,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长城汽车-2022-scope_2_emissions",
+      "source_file": "长城汽车2023年ESG报告.pdf",
+      "pdf_page": 95,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长城汽车-2023-scope_1_emissions",
+      "source_file": "长城汽车2023年ESG报告.pdf",
+      "pdf_page": 95,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长城汽车-2023-scope_2_emissions",
+      "source_file": "长城汽车2023年ESG报告.pdf",
+      "pdf_page": 95,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长城汽车-2024-scope_1_emissions",
+      "source_file": "长城汽车2024年ESG报告.pdf",
+      "pdf_page": 97,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长城汽车-2024-scope_2_emissions",
+      "source_file": "长城汽车2024年ESG报告.pdf",
+      "pdf_page": 97,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "广汽集团-2022-scope_1_emissions",
+      "source_file": "广汽集团2024年ESG报告.pdf",
+      "pdf_page": 131,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "广汽集团-2022-scope_2_emissions",
+      "source_file": "广汽集团2024年ESG报告.pdf",
+      "pdf_page": 131,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "广汽集团-2023-scope_1_emissions",
+      "source_file": "广汽集团2024年ESG报告.pdf",
+      "pdf_page": 131,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "广汽集团-2023-scope_2_emissions",
+      "source_file": "广汽集团2024年ESG报告.pdf",
+      "pdf_page": 131,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "广汽集团-2024-scope_1_emissions",
+      "source_file": "广汽集团2024年ESG报告.pdf",
+      "pdf_page": 131,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "广汽集团-2024-scope_2_emissions",
+      "source_file": "广汽集团2024年ESG报告.pdf",
+      "pdf_page": 131,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "赛力斯-2022-scope_1_emissions",
+      "source_file": "赛力斯2023年ESG报告.pdf",
+      "pdf_page": 56,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "赛力斯-2022-scope_2_emissions",
+      "source_file": "赛力斯2023年ESG报告.pdf",
+      "pdf_page": 56,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "赛力斯-2023-scope_1_emissions",
+      "source_file": "赛力斯2023年ESG报告.pdf",
+      "pdf_page": 56,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "赛力斯-2023-scope_2_emissions",
+      "source_file": "赛力斯2023年ESG报告.pdf",
+      "pdf_page": 56,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "赛力斯-2024-scope_1_emissions",
+      "source_file": "赛力斯2024年ESG报告.pdf",
+      "pdf_page": 60,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "赛力斯-2024-scope_2_emissions",
+      "source_file": "赛力斯2024年ESG报告.pdf",
+      "pdf_page": 60,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长安汽车-2022-scope_1_emissions",
+      "source_file": "长安汽车2024年ESG报告.pdf",
+      "pdf_page": 27,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长安汽车-2022-scope_2_emissions",
+      "source_file": "长安汽车2024年ESG报告.pdf",
+      "pdf_page": 27,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长安汽车-2023-scope_1_emissions",
+      "source_file": "长安汽车2024年ESG报告.pdf",
+      "pdf_page": 27,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长安汽车-2023-scope_2_emissions",
+      "source_file": "长安汽车2024年ESG报告.pdf",
+      "pdf_page": 27,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长安汽车-2024-scope_1_emissions",
+      "source_file": "长安汽车2024年ESG报告.pdf",
+      "pdf_page": 27,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "长安汽车-2024-scope_2_emissions",
+      "source_file": "长安汽车2024年ESG报告.pdf",
+      "pdf_page": 27,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "宁德时代-2022-scope_1_emissions",
+      "source_file": "宁德时代2024年ESG报告.pdf",
+      "pdf_page": 121,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "宁德时代-2022-scope_2_emissions",
+      "source_file": "宁德时代2024年ESG报告.pdf",
+      "pdf_page": 121,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "宁德时代-2023-scope_1_emissions",
+      "source_file": "宁德时代2024年ESG报告.pdf",
+      "pdf_page": 121,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "宁德时代-2023-scope_2_emissions",
+      "source_file": "宁德时代2024年ESG报告.pdf",
+      "pdf_page": 121,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "宁德时代-2024-scope_1_emissions",
+      "source_file": "宁德时代2024年ESG报告.pdf",
+      "pdf_page": 121,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "宁德时代-2024-scope_2_emissions",
+      "source_file": "宁德时代2024年ESG报告.pdf",
+      "pdf_page": 121,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "亿纬锂能-2023-scope_1_emissions",
+      "source_file": "亿纬锂能2024年ESG报告.pdf",
+      "pdf_page": 62,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "亿纬锂能-2023-scope_2_emissions",
+      "source_file": "亿纬锂能2024年ESG报告.pdf",
+      "pdf_page": 62,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "亿纬锂能-2024-scope_1_emissions",
+      "source_file": "亿纬锂能2024年ESG报告.pdf",
+      "pdf_page": 62,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "亿纬锂能-2024-scope_2_emissions",
+      "source_file": "亿纬锂能2024年ESG报告.pdf",
+      "pdf_page": 62,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "上汽集团-2023-scope_1_emissions",
+      "source_file": "上汽集团2023年ESG报告.pdf",
+      "pdf_page": 43,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "上汽集团-2023-scope_2_emissions",
+      "source_file": "上汽集团2023年ESG报告.pdf",
+      "pdf_page": 43,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "上汽集团-2024-scope_1_emissions",
+      "source_file": "上汽集团2024年ESG报告.pdf",
+      "pdf_page": 51,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "上汽集团-2024-scope_2_emissions",
+      "source_file": "上汽集团2024年ESG报告.pdf",
+      "pdf_page": 51,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "国轩高科-2022-scope_1_emissions",
+      "source_file": "国轩高科2022年ESG报告.pdf",
+      "pdf_page": 32,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "国轩高科-2022-scope_2_emissions",
+      "source_file": "国轩高科2022年ESG报告.pdf",
+      "pdf_page": 32,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "国轩高科-2024-scope_1_emissions",
+      "source_file": "国轩高科2024年ESG报告.pdf",
+      "pdf_page": 40,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "国轩高科-2024-scope_2_emissions",
+      "source_file": "国轩高科2024年ESG报告.pdf",
+      "pdf_page": 40,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "华友钴业-2023-scope_1_emissions",
+      "source_file": "华友钴业2024年ESG报告.pdf",
+      "pdf_page": 74,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "华友钴业-2023-scope_2_emissions",
+      "source_file": "华友钴业2024年ESG报告.pdf",
+      "pdf_page": 74,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "华友钴业-2024-scope_1_emissions",
+      "source_file": "华友钴业2024年ESG报告.pdf",
+      "pdf_page": 74,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "华友钴业-2024-scope_2_emissions",
+      "source_file": "华友钴业2024年ESG报告.pdf",
+      "pdf_page": 74,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "比亚迪-2024-scope_3_emissions",
+      "source_file": "比亚迪2024年ESG报告.pdf",
+      "pdf_page": 127,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "工商银行-2022-green_finance_balance",
+      "source_file": "工商银行2022年ESG报告.pdf",
+      "pdf_page": 10,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "工商银行-2023-green_finance_balance",
+      "source_file": "工商银行2023年ESG报告.pdf",
+      "pdf_page": 58,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    },
+    {
+      "annotation_id": "工商银行-2024-green_finance_balance",
+      "source_file": "工商银行2024年ESG报告.pdf",
+      "pdf_page": 82,
+      "decision": "accept_machine_pass",
+      "checks": [
+        "excerpt_overlap_weak"
+      ],
+      "reviewer_id": "machine_second_pass_v1",
+      "review_date": "2026-08-28",
+      "note": "Independent machine-assisted extraction pass; not a human inter-rater review."
+    }
+  ]
+}

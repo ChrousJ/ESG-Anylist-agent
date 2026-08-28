@@ -1,0 +1,273 @@
+{
+  "status": "pass",
+  "input": "/Users/nanyu/dissertation/ESG-Anylist-agent-master/data/annotations/verified_metrics_v1.jsonl",
+  "record_count": 56,
+  "checked_against_pdf": 56,
+  "unique_company_year_metric": 56,
+  "companies": {
+    "上汽集团": 4,
+    "亿纬锂能": 4,
+    "华友钴业": 4,
+    "国轩高科": 4,
+    "宁德时代": 6,
+    "工商银行": 3,
+    "广汽集团": 6,
+    "比亚迪": 7,
+    "赛力斯": 6,
+    "长城汽车": 6,
+    "长安汽车": 6
+  },
+  "metrics": {
+    "green_finance_balance": 3,
+    "scope_1_emissions": 26,
+    "scope_2_emissions": 26,
+    "scope_3_emissions": 1
+  },
+  "source_sha256": {
+    "上汽集团2023年ESG报告.pdf": "8d0b61df0d3c3262f62b740d505a1234c116048abab30ba68c375c9f698c9d2a",
+    "上汽集团2024年ESG报告.pdf": "b0786c979dd21996b4a538f07fd20b024e54d383f2cc43e17d0516e1d8213b93",
+    "亿纬锂能2024年ESG报告.pdf": "f1e2330e6a16f0fe351d66847a56a8aed08e6819ff8198c527110fdd8b19bb49",
+    "华友钴业2024年ESG报告.pdf": "8c1809cf5fe65f0de8c7e13cef558932a03067f6e35accd41c236dd3a8cf6daa",
+    "国轩高科2022年ESG报告.pdf": "2e6243c1c7ba2e926ad103890ef06deceb55f658a8e809481b373d5dbac01f75",
+    "国轩高科2024年ESG报告.pdf": "2088603c5a50bbdb2a755a3cbba090979c6078c01b1a5d50dbdf5a7d276bd55a",
+    "宁德时代2024年ESG报告.pdf": "e16ec727d5959b91586c44edcf1deedf5d3ae29133e798a0529daaea90f535f2",
+    "工商银行2022年ESG报告.pdf": "877a0ceaa21975352a48c3744dcacb217c2b95b692d4980597aefc21a6d83892",
+    "工商银行2023年ESG报告.pdf": "d8d4ba4bea618f618cd021df24c3a0d16073b13a075b4db42425aaeb5dfc1d8c",
+    "工商银行2024年ESG报告.pdf": "317f47b8ffa7611bcad0f56f4d599ded535579853d66820a64769cdc0df02aed",
+    "广汽集团2024年ESG报告.pdf": "a4421800a9edbb17b56c83b43f4353d2736393dc3faaa2057e6f2e72ca20c0dc",
+    "比亚迪2024年ESG报告.pdf": "8dfceabd75452ffaf39b0ffa7a1e841707b586931347819e058ebb343c93b1dd",
+    "赛力斯2023年ESG报告.pdf": "9ff3adc910918b2af28e99c04e09edb7158bf544c542f9f6de14095c7c2571b2",
+    "赛力斯2024年ESG报告.pdf": "d8c68dc15e3711c947a8325f7e4f1c01b37b607293447659341a234d23a8ecb4",
+    "长城汽车2023年ESG报告.pdf": "d5cdd63fbbce0f075037022da34fafbe969b329a7c27d66784b7f2fd15216ccf",
+    "长城汽车2024年ESG报告.pdf": "0f826c6673157c641da03156695a78d4533177533800898b2d493f88531df88c",
+    "长安汽车2024年ESG报告.pdf": "893b563e2248259115b89cf81f1c69d4407dd12645554d878571e1128a241c57"
+  },
+  "errors": [],
+  "warnings": [
+    {
+      "annotation_id": "比亚迪-2022-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "比亚迪-2022-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "比亚迪-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "比亚迪-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "比亚迪-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "比亚迪-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长城汽车-2022-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长城汽车-2022-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长城汽车-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长城汽车-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长城汽车-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长城汽车-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "广汽集团-2022-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "广汽集团-2022-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "广汽集团-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "广汽集团-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "广汽集团-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "广汽集团-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "赛力斯-2022-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "赛力斯-2022-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "赛力斯-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "赛力斯-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "赛力斯-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "赛力斯-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长安汽车-2022-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长安汽车-2022-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长安汽车-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长安汽车-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长安汽车-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "长安汽车-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "宁德时代-2022-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "宁德时代-2022-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "宁德时代-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "宁德时代-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "宁德时代-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "宁德时代-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "亿纬锂能-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "亿纬锂能-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "亿纬锂能-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "亿纬锂能-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "上汽集团-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "上汽集团-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "上汽集团-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "上汽集团-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "国轩高科-2022-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "国轩高科-2022-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "国轩高科-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "国轩高科-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "华友钴业-2023-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "华友钴业-2023-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "华友钴业-2024-scope_1_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "华友钴业-2024-scope_2_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "比亚迪-2024-scope_3_emissions",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "工商银行-2022-green_finance_balance",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "工商银行-2023-green_finance_balance",
+      "type": "second_review_pending"
+    },
+    {
+      "annotation_id": "工商银行-2024-green_finance_balance",
+      "type": "second_review_pending"
+    }
+  ],
+  "second_review_pending_count": 56
+}

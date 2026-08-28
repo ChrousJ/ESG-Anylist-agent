@@ -354,6 +354,9 @@ class AgentState(TypedDict, total=False):
     # 原始数据表（JSON格式，供前端渲染）
     # {"columns": [...], "rows": [...], "footnotes": [...]}
 
+    sql_provenance_sources: list[dict]
+    # SQL 指标的主来源页，由结构化标注 raw payload 恢复。
+
     sources:            list[dict]
     # 来源溯源列表
     # [{"type": "sql"/"rag", "company": str, "year": int,

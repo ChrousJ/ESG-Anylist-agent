@@ -97,7 +97,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from google.genai import types
 from agent.llm_provider import get_default_model, llm_generate_content
-from agent.tracing import TraceLogger, llm_call_with_retry
+from agent.tracing import TraceLogger, llm_call_with_retry, trace_node
 
 # ── 导入状态定义和所有节点函数 ─────────────────────────────────────────────────
 # 每个节点函数的签名都是：(state: AgentState) -> AgentState
@@ -498,14 +498,36 @@ def route_after_knowledge_or_clarify(
     return "memory_updater"
 
 
+# Supported experimental graph profiles. These profiles change only the quality
+# gates, keeping context, planning, SQL/RAG, synthesis and business-signal nodes
+# constant for controlled ablation.
+ABLATION_PROFILES = {"full", "no_evaluators", "eval_d_only", "eval_o_only"}
+
+
+@trace_node("evaluator_d", tags=["evaluation", "ablation_bypass"])
+def evaluator_d_bypass_node(state: AgentState) -> AgentState:
+    state["eval_d_status"] = "pass"
+    state["eval_d_errors"] = []
+    state["missing_data_report"] = {"L1": [], "L2": [], "L3": [], "summary": "Evaluator-D bypassed by ablation profile"}
+    return state
+
+
+@trace_node("evaluator_o", tags=["evaluation", "ablation_bypass"])
+def evaluator_o_bypass_node(state: AgentState) -> AgentState:
+    state["eval_o_status"] = "pass"
+    state["eval_o_errors"] = []
+    state["eval_o_retry_count"] = 0
+    return state
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 图构建
 # ══════════════════════════════════════════════════════════════════════════════
 
-def build_graph() -> StateGraph:
-    """
-    构建完整的 LangGraph 图（这是整个 Agent 的核心组装函数）。
-    """
+def build_graph(ablation_profile: str = "full") -> StateGraph:
+    """Build a graph for a controlled quality-gate ablation profile."""
+    if ablation_profile not in ABLATION_PROFILES:
+        raise ValueError(f"Unsupported ablation profile: {ablation_profile}")
     # ── 创建图构建器 ──────────────────────────────────────────────────────────
     # StateGraph(AgentState) 创建一个以 AgentState 为数据载体的图构建器。
     # 所有注册到这个图上的节点函数，都会接收和返回 AgentState 类型的字典。
@@ -520,12 +542,14 @@ def build_graph() -> StateGraph:
     builder.add_node("sql_worker",        sql_worker_node)
     builder.add_node("rag_worker",        rag_worker_node)
     builder.add_node("worker_aggregator", worker_aggregator_node)
-    builder.add_node("evaluator_d",       evaluator_d_node)
+    evaluator_d_impl = evaluator_d_bypass_node if ablation_profile in {"no_evaluators", "eval_o_only"} else evaluator_d_node
+    evaluator_o_impl = evaluator_o_bypass_node if ablation_profile in {"no_evaluators", "eval_d_only"} else evaluator_o_node
+    builder.add_node("evaluator_d",       evaluator_d_impl)
     builder.add_node("map_reduce",        map_reduce_node)
     builder.add_node("synthesizer",       synthesizer_node)
     builder.add_node("disclosure_scorer", disclosure_scorer_node)
     builder.add_node("greenwashing_detector", greenwashing_detector_node)
-    builder.add_node("evaluator_o",       evaluator_o_node)
+    builder.add_node("evaluator_o",       evaluator_o_impl)
     builder.add_node("memory_updater",    memory_updater_node)
     builder.add_node("degraded_response", degraded_response_node)
     builder.add_node("no_data_response",  no_data_response_node)
@@ -637,23 +661,22 @@ def build_graph() -> StateGraph:
 # 单例：编译好的图对象（供 FastAPI 层直接调用）
 # ══════════════════════════════════════════════════════════════════════════════
 
-_graph_instance = None
+_graph_instances: dict[str, object] = {}
 
 
-def get_graph():
-    """
-    返回编译好的图单例。
-    首次调用时编译，后续调用直接复用（编译耗时约 200ms）。
-    """
-    global _graph_instance
-    if _graph_instance is None:
-        log.info("编译 LangGraph 图...")
-        _graph_instance = build_graph()
+def get_graph(ablation_profile: str | None = None):
+    """Return a cached graph for the requested experimental profile."""
+    profile = (ablation_profile or os.getenv("AGENT_ABLATION_PROFILE", "full")).strip().lower()
+    if profile not in ABLATION_PROFILES:
+        raise ValueError(f"Unsupported ablation profile: {profile}; expected one of {sorted(ABLATION_PROFILES)}")
+    if profile not in _graph_instances:
+        log.info("编译 LangGraph 图 (profile=%s)...", profile)
+        _graph_instances[profile] = build_graph(profile)
         log.info(
-            "LangGraph 图编译完成 (checkpointer=%s)",
-            get_checkpointer_backend_name(),
+            "LangGraph 图编译完成 (profile=%s, checkpointer=%s)",
+            profile, get_checkpointer_backend_name(),
         )
-    return _graph_instance
+    return _graph_instances[profile]
 
 
 # ══════════════════════════════════════════════════════════════════════════════

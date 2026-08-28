@@ -60,7 +60,8 @@ _BLOCKING_ERROR_TYPES = {
 
 _POLICY_YEAR_KEYWORDS = {
     "碳中和", "碳达峰", "双碳", "目标", "愿景", "路线图", "规划", "承诺",
-    "净零", "net zero", "carbon neutral", "target", "roadmap", "long-term", "pathway",
+    "净零", "降低", "降幅", "万元产值", "相对于", "考核指标",
+    "net zero", "carbon neutral", "target", "roadmap", "long-term", "pathway",
 }
 
 _STANDARD_ID_KEYWORDS = {
@@ -525,6 +526,23 @@ def _check_numbers(state: AgentState, trace_id: str) -> list[dict]:
         }]
 
 
+
+def _year_is_grounded_in_evidence(state: AgentState, year: str) -> bool:
+    """Return True when an out-of-query year is quoted from packaged evidence.
+
+    Grounded but tangential years are a relevance issue, not an entity hallucination.
+    """
+    rag = state.get("rag_result", {}) or {}
+    chunks = rag.get("chunks", []) if isinstance(rag, dict) else []
+    texts = []
+    for chunk in chunks[:20]:
+        if isinstance(chunk, dict):
+            texts.append(str(chunk.get("text", "")))
+    for source in (state.get("sources", []) or [])[:20]:
+        if isinstance(source, dict):
+            texts.append(str(source.get("excerpt", "") or source.get("content", "")))
+    return any(year in text for text in texts)
+
 def _check_entity_hallucination(state: AgentState) -> list[dict]:
     """Guard against years beyond requested range (policy years exempt)."""
     entities = state.get("entities", {})
@@ -551,6 +569,8 @@ def _check_entity_hallucination(state: AgentState) -> list[dict]:
 
         if full_year not in requested_years and year_int > max_requested:
             if _is_standard_identifier_mention(analysis, match.start(), match.end()):
+                continue
+            if _year_is_grounded_in_evidence(state, full_year):
                 continue
             if _is_policy_year_mention(analysis, match.start(), match.end()):
                 continue
@@ -1129,6 +1149,10 @@ def _check_scope_annotation(state: AgentState) -> list[dict]:
                     ),
                     re.compile(
                         rf"范围[{scope_cn}{scope_no}][\s\u3000]*碳排放(?:量)?",
+                        re.IGNORECASE,
+                    ),
+                    re.compile(
+                        rf"范围[{scope_cn}{scope_no}][\s\u3000]*(?:温室气体[\s\u3000]*)?排放(?:量)?",
                         re.IGNORECASE,
                     ),
                     re.compile(

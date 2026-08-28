@@ -1,7 +1,7 @@
 # ESG-Insight Agent 实验结果
 
 > 用途：集中记录评测运行结果、消融实验、bad case 和后续优化。  
-> 更新日期：2026-08-13
+> 更新日期：2026-08-28
 
 ---
 
@@ -291,3 +291,106 @@ outputs/eval_runs/20260813_offline_full50_v3/
 - [ ] 独立 Judge 或人工 rubric 复核，避免生成模型自评；
 - [ ] 增加 evaluator / retrieval 消融，分别量化各质量门禁贡献；
 - [ ] 继续优化多公司跨年份检索的召回和 correction-loop 尾延迟。
+
+## 2.7 Dissertation Gold v1 and controlled ablation infrastructure (2026-08-27)
+
+A provenance-rich structured subset and a controlled graph-ablation runner were added for dissertation experiments.
+
+### Data layer
+
+- `data/annotations/verified_metrics_v1.jsonl`: 56 primary-source metric records;
+- 52 automotive/new-energy Scope 1/2 facts across 10 companies;
+- 104 golden facts in `eval/datasets/esg_eval_gold_v1.jsonl`;
+- 42 gold source-page requirements;
+- every annotation records raw value/unit, normalized value/unit, source PDF, physical PDF page, excerpt, organizational boundary, reporting basis, quality status and warnings;
+- PDF-page validation passed for all 56 records;
+- all records remain `needs_second_reviewer=true`, so this is not yet described as independently human-labelled data.
+
+The structured database now contains 56 verified values instead of 19. Historical values explicitly restated by a later report use the latest restated series. Examples include CATL's 2022/2023 battery-production-base emissions as restated in its 2024 report and Seres's adjusted 2022 Scope 1 value.
+
+### Controlled profiles
+
+The graph supports `no_evaluators`, `eval_d_only`, `eval_o_only` and `full`. Only Evaluator-D/O are bypassed; all other nodes are held constant.
+
+### Offline deterministic regression
+
+Suite: `outputs/ablation_runs/20260827_gold_v1_offline_ablation_v3/`
+
+| Profile | Case pass | Golden facts | Gold page recall | Numeric support | Comparability caveat | Partial-missing safety |
+|---|---:|---:|---:|---:|---:|---:|
+| No evaluators | 100% | 100% | 100% | 94.0% | 100% | 100% |
+| Evaluator-D only | 100% | 100% | 100% | 94.5% | 100% | 100% |
+| Evaluator-O only | 100% | 100% | 100% | 94.5% | 100% | 100% |
+| Full | 100% | 100% | 100% | 95.0% | 100% | 100% |
+
+This result is a workflow regression, not evidence of Evaluator causal benefit. The deterministic mode makes all four profiles succeed on the structured facts. Its value is that it verifies profile isolation, data ingestion, SQL/RAG packaging, missing-data behaviour and reproducible metrics.
+
+During this iteration, gold source-page recall initially measured about 50%. Root-cause analysis showed that SQL outputs retained values but not the annotation's source PDF/page, especially when a 2024 report restated 2022/2023 values. Adding `sql_provenance_sources` raised gold page recall to 100% in the fixed suite.
+
+### Online probe status
+
+A two-case online probe reached the configured endpoint but received HTTP 401 responses from `https://antchat.alipay.com/v1/chat/completions`. The deterministic fallback preserved facts and provenance, but runs with Evaluator-O degraded because semantic checker calls also received 401. These outputs are infrastructure-failure artefacts and must not be reported as online model-quality results. A valid credential must pass `scripts/llm_preflight.py` before the matched online ablation is run.
+
+## 2.9 Post-fix final full-profile regression（2026-08-27）
+
+The first complete online ablation exposed a false-positive scope gate: valid answers such as `范围一排放口径说明` were not recognised by the Evaluator-O matcher. A second false-negative was found in the partial-missing predicate, which did not recognise `单独排放量数据未在证据中披露，仅提供合并总量`. Both rules were repaired and covered by regression tests.
+
+The repaired full profile was rerun with the same controlled configuration:
+
+```text
+model: DeepSeek-V4-Pro
+SQL: deterministic entity/metric SELECT fallback
+RAG: local vector + BM25 + RRF, reranker disabled
+LLM_MIN_INTERVAL_SEC: 5
+concurrency: 1
+Judge: disabled
+```
+
+Run directory: `outputs/ablation_runs/20260827_gold_v1_deepseek_full_final_r1/`
+
+| Metric | Result |
+|---|---:|
+| Completion rate | 100.0% (30/30) |
+| Case pass rate | 100.0% (30/30) |
+| Golden fact accuracy | 100.0% (104/104) |
+| Gold evidence page recall | 100.0% (42/42) |
+| Packaged numeric support | 94.6% |
+| Comparability caveat rate | 100.0% |
+| Partial-missing safe rate | 100.0% |
+| Rescue rate | 13.3% (4/30) |
+| Degraded / crashed | 0 / 0 |
+| Average latency | 40.599 s |
+| p95 latency | 51.622 s |
+
+This is a valid single online full-profile regression: there were no provider errors, no timeouts, no deterministic synthesis fallback, no degraded terminal states and no crashes. It is not yet a causal evaluator result because the other profiles have not been rerun after the same fixes. The earlier 20/30 full-profile run is retained as a bug-discovery artefact, not as the final quality result.
+
+## 2.7 修复后在线四 profile × 三次重复消融：`20260828_gold_v1_deepseek_postfix_r3`
+
+2026-08-28 完成修复后的正式在线消融。四种 profile 在相同 30-case Gold 集上各运行 3 次，共 360 次 case execution；SQL deterministic，RAG 使用本地 vector/BM25 + RRF，reranker 关闭，模型为 DeepSeek-V4-Pro，串行请求，LLM 最小间隔 5 秒，Judge 关闭。
+
+| Profile | Case pass | Golden facts | Gold pages | Numeric support | Mean latency (s) | p95 (s) |
+|---|---:|---:|---:|---:|---:|---:|
+| no_evaluators | 100.0% | 100.0% | 100.0% | 94.57±0.15% | 30.26±0.31 | 38.16±1.55 |
+| eval_d_only | 100.0% | 100.0% | 100.0% | 94.97±0.67% | 34.72±0.56 | 48.24±1.36 |
+| eval_o_only | 100.0% | 100.0% | 100.0% | 94.77±0.42% | 41.21±0.66 | 59.91±11.40 |
+| full | 100.0% | 100.0% | 100.0% | 94.87±0.59% | 41.38±2.20 | 57.10±8.19 |
+
+相对于 no_evaluators，每个对比均有 90 个 paired case runs；两边均 90/90 通过，discordant pairs 为 0，McNemar exact p=1.0，paired bootstrap 95% CI=[0,0] 个百分点。结论是当前 Gold 集上没有观察到 Evaluator 对 case pass rate 的增益；可观察到的代价主要是延迟增加，尤其是 Evaluator-O。
+
+原始产物：`outputs/ablation_runs/20260828_gold_v1_deepseek_postfix_r3/`；统计：`paired_statistics.json`。
+
+## 2.8 第二遍数据复核状态
+
+对 56 条记录执行了独立参数的 machine-assisted second-pass PDF audit，检查了来源解析、页码范围、指标术语、数值 token 和 excerpt overlap。56/56 条通过核心来源与数值检查；`data/annotations/second_pass_machine_audit.json` 保存了逐条结果。
+
+这不是第二位人类复核，因此没有把 `needs_second_reviewer` 改为 `false`，也没有把数据集描述为 independently human-labelled benchmark。需要真实第二位复核者在 `data/annotations/second_review_template.csv` 中填写 reviewer ID、日期和 accept/correct/reject 决策后，才能升级该表述。
+
+## 2.9 专家一致性实验状态
+
+已准备专家标注包：
+
+- `eval/expert/disclosure_quality_template.csv`：15 个 disclosure-quality items；
+- `eval/expert/claim_evidence_mismatch_template.csv`：30 个 claim/evidence items；
+- `scripts/analyze_expert_agreement.py`：在两位专家均完成盲标后计算 Cohen's kappa、MAE 等指标。
+
+脚本当前会在标签为空时安全阻断，避免用模型自评或合成标签伪造专家一致性。由于工作目录没有第二位真实 ESG 专家提交的独立标签，截至 2026-08-28 该实验尚不能产生合法的 kappa、MAE、Spearman 或 F1 结果。

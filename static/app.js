@@ -90,7 +90,7 @@ function createTracker() {
             </div>
         </div>
         <div id="analysis-content" class="analysis-content">
-            <p>思考中 <span class="loading-dots">...</span></p>
+            <p>Analysing <span class="loading-dots">...</span></p>
         </div>
     `;
     return html;
@@ -222,7 +222,7 @@ chatForm.addEventListener('submit', async (e) => {
                             if (data.key_findings && data.key_findings.length > 0) {
                                 finalHtml += `
                                     <div class="key-findings" style="margin-top:1.5rem; padding:1rem; background:rgba(35,134,54,0.1); border-radius:8px; border-left:3px solid #3fb950;">
-                                        <h4 style="margin-bottom:0.5rem; color:#3fb950;">核心摘要</h4>
+                                        <h4 style="margin-bottom:0.5rem; color:#3fb950;">Key Findings</h4>
                                         <ul style="margin:0; padding-left:1.5rem; font-size:0.9rem;">
                                             ${data.key_findings.map(f => `<li>${f}</li>`).join('')}
                                         </ul>
@@ -238,9 +238,9 @@ chatForm.addEventListener('submit', async (e) => {
                                     <div class="dq-card">
                                         <div class="dq-score">${dq.score}<span>/100</span></div>
                                         <div>
-                                            <h4>披露质量评分 · ${dq.band}</h4>
-                                            <p>确定性评分 Rubric：完整性、连续性、可比性、可验证性、具体性。</p>
-                                            <p class="dq-risk">风险信号：${riskCount} 个</p>
+                                            <h4>Disclosure Quality Score · ${dq.band}</h4>
+                                            <p>Deterministic rubric: completeness, continuity, comparability, verifiability and specificity.</p>
+                                            <p class="dq-risk">Risk signals: ${riskCount}</p>
                                         </div>
                                     </div>
                                 `;
@@ -254,9 +254,9 @@ chatForm.addEventListener('submit', async (e) => {
                                     <div class="gw-card ${count > 0 ? 'has-risk' : ''}">
                                         <div class="gw-count">${count}</div>
                                         <div>
-                                            <h4>潜在绿漂风险雷达</h4>
-                                            <p>${gw.summary || '当前证据未触发风险信号'}</p>
-                                            <p class="gw-method">claim-evidence mismatch · 规则型检测</p>
+                                            <h4>Potential Claim--Evidence Mismatch Radar</h4>
+                                            <p>${gw.summary || 'No risk signal was triggered by the current evidence'}</p>
+                                            <p class="gw-method">claim--evidence mismatch · rule-based screening</p>
                                         </div>
                                     </div>
                                 `;
