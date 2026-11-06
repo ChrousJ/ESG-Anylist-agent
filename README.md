@@ -3,14 +3,6 @@
 > 对外展示名：**ESG-Insight Agent**；仓库名保留 ESG-Anylist-agent-master。  
 > 面向投资研究 / ESG 分析场景的 **可评测多智能体系统**：用 LangGraph 将 SQL、RAG、质量评估、披露质量评分、绿漂风险雷达、降级响应和可观测性串成一条可解释工作流。
 
-## 为什么这个项目适合秋招展示？
-
-这不是一个简单的「PDF 问答 Demo」。项目重点展示三类能力：
-
-1. **AI Agent 架构能力**：LangGraph 白盒工作流、Supervisor 规划、SQL/RAG 并行、多轮记忆、降级兜底。
-2. **AI 质量工程能力**：生成前 Evaluator-D 检查数据质量，生成后 Evaluator-O 检查数字幻觉、实体越界和趋势方向。
-3. **业务抽象能力**：将 ESG 报告的痛点建模为披露质量、证据可验证性、口径可比性和潜在绿漂风险。
-
 ## 核心功能
 
 - **结构化查询**：Text2SQL 查询 SQLite ESG 指标库。
@@ -50,16 +42,6 @@ map_reduce → synthesizer → disclosure_scorer
          └────────→ evaluator_o ── retry patch → synthesizer
                         ▼
                  memory_updater → response
-```
-
-## 面试前先做运行自检
-
-`project_doctor.py` 只使用 Python 标准库，不会打印 API key 内容，可在安装完整依赖前定位环境问题：
-
-```bash
-make doctor-source  # 检查源码结构、Python 版本、PDF 语料和 smoke dataset
-make doctor         # 额外检查依赖、SQLite、向量库和 LLM 配置
-make quality        # compile + unit tests + source readiness
 ```
 
 ## 快速开始
@@ -136,16 +118,8 @@ python -m unittest discover -s tests
 
 见 `.env.example`。默认支持 Gemini，也可通过 OpenAI-compatible 接口切换到 Qwen。
 
-## 面试讲述重点
-
-- **从 ReAct 黑盒到 LangGraph 白盒**：我把不可控推理拆成可观测节点。
-- **双层 Evaluator**：生成前检查数据，生成后检查输出，降低幻觉。
-- **披露质量评分**：把“回答得像不像”变成可解释的业务评分。
-- **安全边界**：明确数据覆盖范围，缺失值不等于 0，不做投资建议，不对企业做法律意义上的绿漂定性。
-
 ## 文档入口
 
-- `docs/interview-guide.md`：秋招主讲文档（建议第一份看）
 - `docs/project-audit-20260812.md`：项目客观审查与剩余短板
 - `docs/README.md`：文档索引
 - `docs/architecture.md`：当前 LangGraph 架构
